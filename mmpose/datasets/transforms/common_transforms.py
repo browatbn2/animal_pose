@@ -78,6 +78,8 @@ class GetBBoxCenterScale(BaseTransform):
 
             results['bbox_center'] = center
             results['bbox_scale'] = scale
+            results['bbox_center_orig'] = center
+            results['bbox_scale_orig'] = scale
 
         return results
 

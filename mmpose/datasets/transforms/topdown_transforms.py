@@ -9,6 +9,9 @@ from mmengine import is_seq_of
 from mmpose.registry import TRANSFORMS
 from mmpose.structures.bbox import get_udp_warp_matrix, get_warp_matrix
 
+import matplotlib.pyplot as plt
+import kornia
+
 
 @TRANSFORMS.register_module()
 class TopdownAffine(BaseTransform):
@@ -140,3 +143,73 @@ class TopdownAffine(BaseTransform):
         repr_str += f'(input_size={self.input_size}, '
         repr_str += f'use_udp={self.use_udp})'
         return repr_str
+
+
+@TRANSFORMS.register_module()
+class TopdownAffineDino(TopdownAffine):
+    def __init__(self,
+                 input_size: Tuple[int, int],
+                 input_size_dino: Tuple[int, int]) -> None:
+        super().__init__(input_size, use_udp=False)
+        self.input_size_dino = input_size_dino
+
+    def transform(self, results: Dict) -> Optional[dict]:
+        """The transform function of :class:`TopdownAffineDino`.
+
+        See ``transform()`` method of :class:`BaseTransform` for details.
+
+        Args:
+            results (dict): The result dict
+
+        Returns:
+            dict: The result dict.
+        """
+
+        w, h = self.input_size_dino
+        warp_size = (int(w), int(h))
+
+        center = results['input_center']
+        scale = results['input_scale']
+        if 'bbox_rotation' in results:
+            rot = results['bbox_rotation'][0]
+        else:
+            rot = 0.
+
+        if self.use_udp:
+            warp_mat = get_udp_warp_matrix(
+                center, scale, rot, output_size=(w, h))
+        else:
+            warp_mat = get_warp_matrix(center, scale, rot, output_size=(w, h))
+
+        _warp_mat = np.concatenate([warp_mat, [[0.0, 0.0, 1.0]]])
+
+        # reshape bbox to fixed aspect ratio
+        results['bbox_scale_orig'] = self._fix_aspect_ratio(
+            results['bbox_scale_orig'], aspect_ratio=w / h)
+
+        warp_mat_orig = get_warp_matrix(results['bbox_center_orig'][0],
+                                        results['bbox_scale_orig'][0],
+                                        rot=0,
+                                        output_size=self.input_size_dino)
+        warp_mat_orig_inv = np.linalg.inv(np.concatenate([warp_mat_orig, [[0.0, 0.0, 1.0]]]))
+
+        t = _warp_mat @ warp_mat_orig_inv
+
+        import torch
+        dino_wrp = kornia.geometry.affine(torch.tensor(results['attentions']), torch.tensor(t[:2]).float())
+
+        # att = results['attentions'][0].astype(np.float32)
+        # att_wrp = cv2.warpAffine(att, t[:2], warp_size, flags=cv2.INTER_LINEAR)
+
+        img_orig = cv2.imread(results['img_path'])
+        fig, ax = plt.subplots(1, 4)
+        ax[0].imshow(results['img'])
+        # ax[1].imshow(att_wrp)
+        ax[2].imshow(img_orig)
+        ax[3].imshow(dino_wrp[0])
+        plt.show()
+
+        results['attentions'] = dino_wrp
+
+        return results
+

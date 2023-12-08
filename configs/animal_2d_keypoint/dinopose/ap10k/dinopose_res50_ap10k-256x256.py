@@ -6,7 +6,7 @@ train_cfg = dict(max_epochs=210, val_interval=1)
 # optimizer
 optim_wrapper = dict(optimizer=dict(
     type='Adam',
-    lr=2e-5,
+    lr=2e-4,
 ))
 
 # learning policy
@@ -27,7 +27,9 @@ optim_wrapper = dict(optimizer=dict(
 auto_scale_lr = dict(base_batch_size=512)
 
 # hooks
-default_hooks = dict(checkpoint=dict(save_best='coco/AP', rule='greater'))
+default_hooks = dict(checkpoint=dict(save_best='coco/AP', rule='greater'),
+                     visualization=dict(type='TrainVisualizationHook', enable=True, interval=1, wait_time=0),
+                     )
 
 # codec settings
 codec = dict(
@@ -35,23 +37,43 @@ codec = dict(
 
 # model settings
 model = dict(
-    type='TopdownPoseEstimator',
+    type='DinoPoseEstimator',
     data_preprocessor=dict(
         type='PoseDataPreprocessor',
         mean=[123.675, 116.28, 103.53],
         std=[58.395, 57.12, 57.375],
         bgr_to_rgb=True),
+    dino_encoder=dict(
+        type='ResNet',
+        depth=50,
+        in_channels=384,
+        deep_stem=True,
+        num_stages=3,
+        strides=(1, 2, 1),
+        dilations=(1, 1, 1),
+        out_indices=(2,),
+        init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50'),
+    ),
+    dino_neck=dict(
+        type='HeatmapHead',
+        in_channels=1024,
+        out_channels=17),
+    head=dict(
+        type='HeatmapHead',
+        in_channels=17,
+        out_channels=17,
+        deconv_out_channels=None,
+        loss=dict(type='KeypointMSELoss', use_target_weight=True),
+        decoder=codec),
     backbone=dict(
         type='ResNet',
         depth=50,
         init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50'),
     ),
-    head=dict(
+    neck=dict(
         type='HeatmapHead',
         in_channels=2048,
-        out_channels=17,
-        loss=dict(type='KeypointMSELoss', use_target_weight=True),
-        decoder=codec),
+        out_channels=17),
     test_cfg=dict(
         flip_test=True,
         flip_mode='heatmap',
@@ -63,19 +85,25 @@ model = dict(
 # base dataset settings
 dataset_type = 'AP10KDataset'
 data_mode = 'topdown'
-# data_root = 'data/ap10k/'
 data_root = '/home/browatbn/dev/datasets/animal_data/ap-10k/'
 
 # pipelines
 train_pipeline = [
     dict(type='LoadImage'),
     dict(type='GetBBoxCenterScale'),
-    dict(type='RandomFlip', direction='horizontal'),
-    dict(type='RandomHalfBody'),
-    dict(type='RandomBBoxTransform'),
+    # dict(type='RandomFlip', direction='horizontal'),
+    # dict(type='RandomHalfBody'),
+    dict(type='RandomBBoxTransform', rotate_prob=1),
+    dict(type='LoadDino'),
     dict(type='TopdownAffine', input_size=codec['input_size']),
+    dict(type='TopdownAffineDino', input_size=codec['input_size'],
+         input_size_dino=codec['heatmap_size']),
     dict(type='GenerateTarget', encoder=codec),
-    dict(type='PackPoseInputs')
+    dict(type='PackPoseInputs',
+         meta_keys=('id', 'img_id', 'img_path', 'category_id', 'crowd_index', 'ori_shape', 'img_shape',
+        'input_size', 'input_center', 'input_scale', 'flip', 'flip_direction', 'flip_indices',
+        'raw_ann_info', 'dataset_name', 'attentions'),
+         pack_transformed=True)
 ]
 val_pipeline = [
     dict(type='LoadImage'),
@@ -86,9 +114,9 @@ val_pipeline = [
 
 # data loaders
 train_dataloader = dict(
-    batch_size=64,
-    num_workers=4,
-    persistent_workers=True,
+    batch_size=5,
+    num_workers=0,
+    persistent_workers=False,
     sampler=dict(type='DefaultSampler', shuffle=True),
     dataset=dict(
         type=dataset_type,

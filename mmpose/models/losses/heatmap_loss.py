@@ -67,7 +67,7 @@ class KeypointMSELoss(nn.Module):
             _loss = F.mse_loss(output, target, reduction='none')
             loss = (_loss * _mask).mean()
 
-        return loss * self.loss_weight
+        return loss * self.loss_weight * 100.0
 
     def _get_mask(self, target: Tensor, target_weights: Optional[Tensor],
                   mask: Optional[Tensor]) -> Optional[Tensor]:

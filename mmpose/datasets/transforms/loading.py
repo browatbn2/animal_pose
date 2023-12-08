@@ -69,3 +69,40 @@ class LoadImage(LoadImageFromFile):
             raise e
 
         return results
+
+
+import h5py
+import os.path as osp
+from mmcv.transforms.base import BaseTransform
+
+
+def load_dino_hdf5(filepath: str) -> h5py.File:
+    print(f"Loading DINO features from file {filepath}")
+    return h5py.File(filepath, 'r')
+
+
+@TRANSFORMS.register_module()
+class LoadDino(BaseTransform):
+
+    def __init__(self, dino_file="/home/browatbn/dev/data/dino/dino_train-split1_vits14_14.h5") -> None:
+        self.dino_file = dino_file
+        assert osp.isfile(self.dino_file), f"Could not find DINO feature file {self.dino_file}"
+        self.attentions = load_dino_hdf5(self.dino_file)
+
+    def _get_dino_features(self, idx: int) -> np.ndarray:
+        return np.array(self.attentions[str(idx)])
+
+    def transform(self, results: dict) -> Optional[dict]:
+        """The transform function of :class:`LoadImage`.
+
+        Args:
+            results (dict): The result dict
+
+        Returns:
+            dict: The result dict.
+        """
+        a = self._get_dino_features(results['id'])
+        if results.get('flip', False):
+            a = a[:, :, ::-1]
+        results['attentions'] = a
+        return results

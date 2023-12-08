@@ -1,5 +1,5 @@
 Models:
-- Config: configs/animal_2d_keypoint/topdown_heatmap/ap10k/td-hm_res50_8xb64-210e_ap10k-256x256.py
+- Config: configs/animal_2d_keypoint/topdown_heatmap/ap10k/dinopose_res50_ap10k-256x256.py
   In Collection: SimpleBaseline2D
   Metadata:
     Architecture: &id001

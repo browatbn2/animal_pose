@@ -2,6 +2,8 @@
 import os
 import warnings
 from typing import Optional, Sequence
+import numpy as np
+import torch
 
 import mmcv
 import mmengine
@@ -166,3 +168,79 @@ class PoseVisualizationHook(Hook):
                 kpt_thr=self.kpt_thr,
                 out_file=out_file,
                 step=self._test_index)
+
+
+import cv2
+from mmpose.visualization.vis import create_keypoint_result_figure, Visualization
+
+@HOOKS.register_module()
+class TrainVisualizationHook(Hook):
+    """Pose Estimation Visualization Hook to visualize training process.
+
+    In the testing phase:
+
+    1. If ``show`` is True, it means that only the prediction results are
+        visualized without storing data, so ``vis_backends`` needs to
+        be excluded.
+    2. If ``out_dir`` is specified, it means that the prediction results
+        need to be saved to ``out_dir``. In order to avoid vis_backends
+        also storing data, so ``vis_backends`` needs to be excluded.
+    3. ``vis_backends`` takes effect if the user does not specify ``show``
+        and `out_dir``. You can set ``vis_backends`` to WandbVisBackend or
+        TensorboardVisBackend to store the prediction result in Wandb or
+        Tensorboard.
+
+    Args:
+        enable (bool): whether to draw prediction results. If it is False,
+            it means that no drawing will be done. Defaults to False.
+        interval (int): The interval of visualization. Defaults to 50.
+        score_thr (float): The threshold to visualize the bboxes
+            and masks. Defaults to 0.3.
+        show (bool): Whether to display the drawn image. Default to False.
+        wait_time (float): The interval of show (s). Defaults to 0.
+        out_dir (str, optional): directory where painted images
+            will be saved in testing process.
+        backend_args (dict, optional): Arguments to instantiate the preifx of
+            uri corresponding backend. Defaults to None.
+    """
+
+    def __init__(
+        self,
+        enable: bool = False,
+        interval: int = 50,
+        kpt_thr: float = 0.3,
+        show: bool = False,
+        wait_time: float = 0.,
+    ):
+        # self._visualizer: Visualizer = Visualizer.get_current_instance()
+        self.interval = interval
+        self.kpt_thr = kpt_thr
+        self.show = show
+        self.wait_time = wait_time
+        self.enable = enable
+        self._test_index = 0
+        self.vi = Visualization()
+
+    def after_train_iter(self, runner: Runner, batch_idx: int, data_batch: dict,
+                         outputs: dict) -> None:
+        """Run after every ``self.interval`` training iterations.
+
+        Args:
+            runner (:obj:`Runner`): The runner of the validation process.
+            batch_idx (int): The index of the current batch in the val loop.
+            data_batch (dict): Data from dataloader.
+            outputs (dict): Outputs from train_step.
+        """
+        if self.enable is False:
+            return
+
+        total_curr_iter = runner.iter + batch_idx
+
+        if total_curr_iter % self.interval == 0:
+            attentions = np.array([s.attentions for s in data_batch['data_samples']])
+            images = torch.stack(data_batch['inputs'])
+            disp_dino = self.vi.visualize_batch(images=images, attentions=attentions)
+            disp_keypoints = create_keypoint_result_figure(images, outputs['outputs'], data_batch['data_samples'])
+            cv2.imshow("Batch", cv2.cvtColor(disp_dino, cv2.COLOR_RGB2BGR))
+            cv2.imshow("Predicted Keypoints", cv2.cvtColor(disp_keypoints, cv2.COLOR_RGB2BGR))
+            cv2.waitKey(self.wait_time)
