@@ -189,7 +189,7 @@ class TopdownAffineDino(TopdownAffine):
         results['bbox_scale_orig'] = self._fix_aspect_ratio(
             results['bbox_scale_orig'], aspect_ratio=w / h)
 
-        if results['flip']:
+        if results.get('flip', False):
             results['bbox_center_orig'] = flip_bbox(
                 results['bbox_center_orig'],
                 image_size=results['ori_shape'][::-1],

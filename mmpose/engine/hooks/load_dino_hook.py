@@ -37,12 +37,17 @@ class LoadDinoHook(Hook):
         self.dino_hdf5 = None
         self.dino_features = {}
 
-        if True:
-            split = 'train-split1'
-            dino_file = get_dinov2_filepath(split=split)
-            if dino_file is not None:
-                assert os.path.isfile(dino_file), f"Could not find DINO feature file {dino_file}"
-                self.dino_hdf5 = load_dino_hdf5(dino_file)
+        split = 'train-split1'
+        dino_file = get_dinov2_filepath(split=split)
+        if dino_file is not None:
+            assert os.path.isfile(dino_file), f"Could not find DINO feature file {dino_file}"
+            self.dino_hdf5_train = load_dino_hdf5(dino_file)
+
+        split = 'val-split1'
+        dino_file = get_dinov2_filepath(split=split)
+        if dino_file is not None:
+            assert os.path.isfile(dino_file), f"Could not find DINO feature file {dino_file}"
+            self.dino_hdf5_val = load_dino_hdf5(dino_file)
 
     def _get_dino_features(self, idx: int) -> np.ndarray:
         key = str(idx)
@@ -53,7 +58,8 @@ class LoadDinoHook(Hook):
         features = []
         for i, data_sample in enumerate(data['data_samples']):
             feat = self._get_dino_features(data_sample.id)
-            if data_sample.flip:
+            # if 'flip' in data_sample and data_sample.flip:
+            if data_sample.get('flip', False):
                 feat = feat[:, :, ::-1].copy()
             features.append(feat)
 
@@ -73,4 +79,13 @@ class LoadDinoHook(Hook):
         return data
 
     def before_train_iter(self, runner, batch_idx: int, data_batch: DATA_BATCH = None) -> None:
+        self.dino_hdf5 = self.dino_hdf5_train
+        self._load_dino_batch(data_batch)
+
+    def before_val_iter(self, runner, batch_idx: int, data_batch: DATA_BATCH = None) -> None:
+        self.dino_hdf5 = self.dino_hdf5_val
+        self._load_dino_batch(data_batch)
+
+    def before_test_iter(self, runner, batch_idx: int, data_batch: DATA_BATCH = None) -> None:
+        self.dino_hdf5 = self.dino_hdf5_val
         self._load_dino_batch(data_batch)

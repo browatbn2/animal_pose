@@ -221,8 +221,17 @@ class TrainVisualizationHook(Hook):
         self._test_index = 0
         self.vi = Visualization()
 
-    def after_train_iter(self, runner: Runner, batch_idx: int, data_batch: dict,
-                         outputs: dict) -> None:
+    def _visualize(self, data_batch: dict):
+            images = torch.stack(data_batch['inputs'])
+            attentions = np.array([s.dino.cpu().numpy() for s in data_batch['data_samples']])
+            disp_dino = self.vi.visualize_batch(images=images, attentions=attentions)
+            cv2.imshow("Batch", cv2.cvtColor(disp_dino, cv2.COLOR_RGB2BGR))
+
+            disp_keypoints = create_keypoint_result_figure(images, outputs['outputs'], data_batch['data_samples'])
+            cv2.imshow("Predicted Keypoints", cv2.cvtColor(disp_keypoints, cv2.COLOR_RGB2BGR))
+            cv2.waitKey(int(self.wait_time))
+
+    def after_test_iter(self, runner: Runner, batch_idx: int, data_batch: dict) -> None:
         """Run after every ``self.interval`` training iterations.
 
         Args:
@@ -237,10 +246,5 @@ class TrainVisualizationHook(Hook):
         total_curr_iter = runner.iter + batch_idx
 
         if total_curr_iter % self.interval == 0:
-            images = torch.stack(data_batch['inputs'])
-            attentions = np.array([s.dino.cpu().numpy() for s in data_batch['data_samples']])
-            disp_dino = self.vi.visualize_batch(images=images, attentions=attentions)
-            cv2.imshow("Batch", cv2.cvtColor(disp_dino, cv2.COLOR_RGB2BGR))
-            disp_keypoints = create_keypoint_result_figure(images, outputs['outputs'], data_batch['data_samples'])
-            cv2.imshow("Predicted Keypoints", cv2.cvtColor(disp_keypoints, cv2.COLOR_RGB2BGR))
-            cv2.waitKey(self.wait_time)
+            self._visualize(data_batch)
+

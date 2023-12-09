@@ -29,7 +29,7 @@ auto_scale_lr = dict(base_batch_size=512)
 # hooks
 default_hooks = dict(
     checkpoint=dict(save_best='coco/AP', rule='greater'),
-    # visualization=dict(type='TrainVisualizationHook', enable=True, interval=20, wait_time=5),
+    visualization=dict(type='TrainVisualizationHook', enable=True, interval=1, wait_time=0),
     load_dino=dict(type='LoadDinoHook'),
 )
 
@@ -112,7 +112,12 @@ val_pipeline = [
     dict(type='LoadImage'),
     dict(type='GetBBoxCenterScale'),
     dict(type='TopdownAffine', input_size=codec['input_size']),
-    dict(type='PackPoseInputs')
+    dict(type='TopdownAffineDino', input_size=codec['input_size'], input_size_dino=codec['heatmap_size']),
+    dict(type='PackPoseInputs',
+         meta_keys=('id', 'img_id', 'img_path', 'category_id', 'crowd_index', 'ori_shape', 'img_shape',
+                    'input_size', 'input_center', 'input_scale', 'flip', 'flip_direction', 'flip_indices',
+                    'raw_ann_info', 'dataset_name', 'dino_warp_mat'),
+         pack_transformed=True)
 ]
 
 # data loaders
@@ -154,16 +159,12 @@ test_dataloader = dict(
         type=dataset_type,
         data_root=data_root,
         data_mode=data_mode,
-        ann_file='annotations/ap10k-test-split1.json',
+        ann_file='annotations/ap10k-val-split1.json',
         data_prefix=dict(img='data/'),
         test_mode=True,
         pipeline=val_pipeline,
     ))
 
 # evaluators
-val_evaluator = dict(
-    type='CocoMetric',
-    ann_file=data_root + 'annotations/ap10k-val-split1.json')
-test_evaluator = dict(
-    type='CocoMetric',
-    ann_file=data_root + 'annotations/ap10k-test-split1.json')
+val_evaluator = dict(type='CocoMetric', ann_file=data_root + 'annotations/ap10k-val-split1.json')
+test_evaluator = dict(type='CocoMetric', ann_file=data_root + 'annotations/ap10k-val-split1.json')

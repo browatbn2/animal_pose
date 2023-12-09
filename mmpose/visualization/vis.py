@@ -488,12 +488,13 @@ def visualize_batch_pose(
     return make_grid(disp_images, nCols=len(disp_images))
 
 
-def create_keypoint_result_figure(inputs: Tensor, outputs: Tensor, data_samples: SampleList):
+def create_keypoint_result_figure(inputs: Tensor, data_samples: SampleList):
 
     keypoints_gt = np.concatenate([s.gt_instances[0].transformed_keypoints for s in data_samples])
     keypoints_visible = np.concatenate([s.gt_instances[0].keypoints_visible for s in data_samples])
     heatmaps_gt = np.stack([to_numpy(s.gt_fields.heatmaps) for s in data_samples])
-    pred, _ = get_heatmap_maximum(to_numpy(outputs))
+    heatmaps_pred = np.stack([to_numpy(s.pred_fields) for s in data_samples])
+    pred, _ = get_heatmap_maximum(to_numpy(heatmaps_pred))
     rows = []
 
     rows.append(visualize_batch_pose(inputs,
@@ -507,7 +508,7 @@ def create_keypoint_result_figure(inputs: Tensor, outputs: Tensor, data_samples:
     #                                  draw_skeleton=True))
 
     rows.append(visualize_batch_pose(inputs, heatmaps=heatmaps_gt, show_images=False))
-    rows.append(visualize_batch_pose(inputs, heatmaps=outputs, show_images=False))
+    rows.append(visualize_batch_pose(inputs, heatmaps=heatmaps_pred, show_images=False))
     return make_grid(rows, nCols=1)
 
 

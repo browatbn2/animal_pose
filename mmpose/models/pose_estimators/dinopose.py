@@ -18,6 +18,8 @@ from mmpose.utils.typing import (ConfigType, InstanceList, OptConfigType,
 from .base import BasePoseEstimator
 from mmpose.utils.tensor_utils import to_numpy
 from mmpose.evaluation.functional import pose_pck_accuracy
+from mmengine.structures import PixelData
+from mmpose.models.utils.tta import flip_heatmaps
 
 
 def get_dinov2_filepath(split):
@@ -144,44 +146,6 @@ class DinoPoseEstimator(BasePoseEstimator):
         print(f"t1={1000 * (time.time() - t):.0f}ms")
         return data
 
-    def train_step(self, data: Union[dict, tuple, list],
-                   optim_wrapper: OptimWrapper) -> Dict[str, torch.Tensor]:
-        """Implements the default model training process including
-        preprocessing, model forward propagation, loss calculation,
-        optimization, and back-propagation.
-
-        During non-distributed training. If subclasses do not override the
-        :meth:`train_step`, :class:`EpochBasedTrainLoop` or
-        :class:`IterBasedTrainLoop` will call this method to update model
-        parameters. The default parameter update process is as follows:
-
-        1. Calls ``self.data_processor(data, training=False)`` to collect
-           batch_inputs and corresponding data_samples(labels).
-        2. Calls ``self(batch_inputs, data_samples, mode='loss')`` to get raw
-           loss
-        3. Calls ``self.parse_losses`` to get ``parsed_losses`` tensor used to
-           backward and dict of loss tensor used to log messages.
-        4. Calls ``optim_wrapper.update_params(loss)`` to update model.
-
-        Args:
-            data (dict or tuple or list): Data sampled from dataset.
-            optim_wrapper (OptimWrapper): OptimWrapper instance
-                used to update model parameters.
-
-        Returns:
-            Dict[str, torch.Tensor]: A ``dict`` of tensor for logging.
-        """
-
-        # Enable automatic mixed precision training context.
-        with optim_wrapper.optim_context(self):
-            data = self.data_preprocessor(data, True)
-            # data = self._load_dino_batch(data)
-            losses, outputs = self._run_forward(data, mode='loss')  # type: ignore
-        parsed_losses, log_vars = self.parse_losses(losses)  # type: ignore
-        log_vars['outputs'] = outputs
-        optim_wrapper.update_params(parsed_losses)
-        return log_vars
-
     def get_dino_inputs(self, data_samples):
         return torch.stack([s.dino for s in data_samples])
 
@@ -214,7 +178,60 @@ class DinoPoseEstimator(BasePoseEstimator):
         # x = self._predict_batch_dino(data_samples)
         return x
 
-    def loss(self, inputs: Tensor, data_samples: SampleList) -> tuple:
+    def train_step(self, data: Union[dict, tuple, list],
+                   optim_wrapper: OptimWrapper) -> Dict[str, torch.Tensor]:
+        """Implements the default model training process including
+        preprocessing, model forward propagation, loss calculation,
+        optimization, and back-propagation.
+
+        During non-distributed training. If subclasses do not override the
+        :meth:`train_step`, :class:`EpochBasedTrainLoop` or
+        :class:`IterBasedTrainLoop` will call this method to update model
+        parameters. The default parameter update process is as follows:
+
+        1. Calls ``self.data_processor(data, training=False)`` to collect
+           batch_inputs and corresponding data_samples(labels).
+        2. Calls ``self(batch_inputs, data_samples, mode='loss')`` to get raw
+           loss
+        3. Calls ``self.parse_losses`` to get ``parsed_losses`` tensor used to
+           backward and dict of loss tensor used to log messages.
+        4. Calls ``optim_wrapper.update_params(loss)`` to update model.
+
+        Args:
+            data (dict or tuple or list): Data sampled from dataset.
+            optim_wrapper (OptimWrapper): OptimWrapper instance
+                used to update model parameters.
+
+        Returns:
+            Dict[str, torch.Tensor]: A ``dict`` of tensor for logging.
+        """
+
+        # Enable automatic mixed precision training context.
+        with optim_wrapper.optim_context(self):
+            _data = self.data_preprocessor(data, True)
+            # data = self._load_dino_batch(data)
+            losses, results = self.forward(**_data, train=True)  # type: ignore
+            data['data_samples'] = results
+        parsed_losses, log_vars = self.parse_losses(losses)  # type: ignore
+        # log_vars['outputs'] = results
+        optim_wrapper.update_params(parsed_losses)
+        return log_vars
+
+    def val_step(self, data: Union[dict, tuple, list]) -> list:
+        data = self.data_preprocessor(data, False)
+        return self.predict(data, train=False)  # type: ignore
+
+    def test_step(self, data: Union[dict, tuple, list]) -> list:
+        data = self.data_preprocessor(data, False)
+        return self.predict(data, train=False)  # type: ignore
+
+    def loss(self, inputs: Tensor, data_samples: SampleList) -> dict:
+        pass
+
+    def predict(self, inputs: Tensor, data_samples: SampleList) -> SampleList:
+        pass
+
+    def forward(self, inputs: Tensor, data_samples: SampleList, train=False) -> tuple:
         """Calculate losses from a batch of inputs and data samples.
 
         Args:
@@ -228,22 +245,43 @@ class DinoPoseEstimator(BasePoseEstimator):
 
         inputs = self.get_dino_inputs(data_samples)
 
-        feats = self.extract_feat(inputs)
+        if not train and self.test_cfg.get('flip_test', False):
+            _feats = self.extract_feat(inputs)
+            _feats_flip = self.extract_feat(inputs.flip(-1))
+            feats = [_feats, _feats_flip]
+        else:
+            feats = self.extract_feat(inputs)
 
-        pred_fields = self.head.forward(feats)
+        if not train and self.test_cfg.get('flip_test', False):
+            # TTA: flip test -> feats = [orig, flipped]
+            assert isinstance(feats, list) and len(feats) == 2
+            flip_indices = data_samples[0].metainfo['flip_indices']
+            _feats, _feats_flip = feats
+            _pred_heatmaps = self.head.forward(_feats)
+            _pred_heatmaps_flip = flip_heatmaps(
+                self.head.forward(_feats_flip),
+                flip_mode=self.test_cfg.get('flip_mode', 'heatmap'),
+                flip_indices=flip_indices,
+                shift_heatmap=self.test_cfg.get('shift_heatmap', False))
+            pred_heatmaps = (_pred_heatmaps + _pred_heatmaps_flip) * 0.5
+        else:
+            pred_heatmaps = self.head.forward(feats)
+
         gt_heatmaps = torch.stack([d.gt_fields.heatmaps for d in data_samples])
         keypoint_weights = torch.cat([d.gt_instance_labels.keypoint_weights for d in data_samples])
 
         # calculate losses
         losses = dict()
-        loss = self.head.loss_module(pred_fields, gt_heatmaps, keypoint_weights)
-
+        loss = self.head.loss_module(pred_heatmaps, gt_heatmaps, keypoint_weights)
         losses.update(loss_kpt=loss)
+
+        preds = self.head.decode(pred_heatmaps)
+        pred_fields = [PixelData(heatmaps=hm) for hm in pred_heatmaps.detach()]
 
         # calculate accuracy
         if self.train_cfg.get('compute_acc', True):
             _, avg_acc, _ = pose_pck_accuracy(
-                output=to_numpy(pred_fields),
+                output=to_numpy(pred_heatmaps),
                 target=to_numpy(gt_heatmaps),
                 mask=to_numpy(keypoint_weights) > 0)
 
@@ -253,51 +291,54 @@ class DinoPoseEstimator(BasePoseEstimator):
         # losses.update(
         #     self.head.loss(feats, data_samples, train_cfg=self.train_cfg))
 
-        return losses, pred_fields
+        results = self.add_pred_to_datasample(preds, pred_fields, data_samples)
 
-    def predict(self, inputs: Tensor, data_samples: SampleList) -> SampleList:
-        """Predict results from a batch of inputs and data samples with post-
-        processing.
+        return losses, results
 
-        Args:
-            inputs (Tensor): Inputs with shape (N, C, H, W)
-            data_samples (List[:obj:`PoseDataSample`]): The batch
-                data samples
-
-        Returns:
-            list[:obj:`PoseDataSample`]: The pose estimation results of the
-            input images. The return value is `PoseDataSample` instances with
-            ``pred_instances`` and ``pred_fields``(optional) field , and
-            ``pred_instances`` usually contains the following keys:
-
-                - keypoints (Tensor): predicted keypoint coordinates in shape
-                    (num_instances, K, D) where K is the keypoint number and D
-                    is the keypoint dimension
-                - keypoint_scores (Tensor): predicted keypoint scores in shape
-                    (num_instances, K)
-        """
-        assert self.with_head, (
-            'The model must have head to perform prediction.')
-
-        if self.test_cfg.get('flip_test', False):
-            _feats = self.extract_feat(inputs)
-            _feats_flip = self.extract_feat(inputs.flip(-1))
-            feats = [[_feats], [_feats_flip]]
-        else:
-            feats = self.extract_feat(inputs)
-
-        preds = self.head.predict(feats, data_samples, test_cfg=self.test_cfg)
-
-        if isinstance(preds, tuple):
-            batch_pred_instances, batch_pred_fields = preds
-        else:
-            batch_pred_instances = preds
-            batch_pred_fields = None
-
-        results = self.add_pred_to_datasample(batch_pred_instances,
-                                              batch_pred_fields, data_samples)
-
-        return results
+    # def forward(self, inputs: Tensor, data_samples: SampleList, train=False) -> SampleList:
+    #     """Predict results from a batch of inputs and data samples with post-
+    #     processing.
+    #
+    #     Args:
+    #         inputs (Tensor): Inputs with shape (N, C, H, W)
+    #         data_samples (List[:obj:`PoseDataSample`]): The batch
+    #             data samples
+    #
+    #     Returns:
+    #         list[:obj:`PoseDataSample`]: The pose estimation results of the
+    #         input images. The return value is `PoseDataSample` instances with
+    #         ``pred_instances`` and ``pred_fields``(optional) field , and
+    #         ``pred_instances`` usually contains the following keys:
+    #
+    #             - keypoints (Tensor): predicted keypoint coordinates in shape
+    #                 (num_instances, K, D) where K is the keypoint number and D
+    #                 is the keypoint dimension
+    #             - keypoint_scores (Tensor): predicted keypoint scores in shape
+    #                 (num_instances, K)
+    #     """
+    #     assert self.with_head, (
+    #         'The model must have head to perform prediction.')
+    #
+    #     inputs = self.get_dino_inputs(data_samples)
+    #
+    #     if train==False and self.test_cfg.get('flip_test', False):
+    #         _feats = self.extract_feat(inputs)
+    #         _feats_flip = self.extract_feat(inputs.flip(-1))
+    #         feats = [_feats, _feats_flip]
+    #     else:
+    #         feats = self.extract_feat(inputs)
+    #
+    #     preds = self.head.predict(feats, data_samples, test_cfg=self.test_cfg)
+    #
+    #     if isinstance(preds, tuple):
+    #         batch_pred_instances, batch_pred_fields = preds
+    #     else:
+    #         batch_pred_instances = preds
+    #         batch_pred_fields = None
+    #
+    #     results = self.add_pred_to_datasample(batch_pred_instances, batch_pred_fields, data_samples)
+    #
+    #     return results
 
     def add_pred_to_datasample(self, batch_pred_instances: InstanceList,
                                batch_pred_fields: Optional[PixelDataList],
