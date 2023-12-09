@@ -4,9 +4,13 @@ from collections import OrderedDict
 from mmengine.optim import OptimWrapper
 import torch
 import numpy as np
+import kornia
 
+import time
 import cv2
+import os
 from torch import Tensor
+import h5py
 
 from mmpose.registry import MODELS
 from mmpose.utils.typing import (ConfigType, InstanceList, OptConfigType,
@@ -14,6 +18,23 @@ from mmpose.utils.typing import (ConfigType, InstanceList, OptConfigType,
 from .base import BasePoseEstimator
 from mmpose.utils.tensor_utils import to_numpy
 from mmpose.evaluation.functional import pose_pck_accuracy
+
+
+def get_dinov2_filepath(split):
+    out_dir = '/home/browatbn/dev/data/dino'
+    patch_size = 14
+    arch = 'vits14'
+    # return os.path.join(out_dir, f'pca3_dino_{split}_{arch}_{patch_size}.h5')
+    # return os.path.join(out_dir, f'pca9_dino_{split}_{arch}_{patch_size}.h5')
+    # return os.path.join(out_dir, f'pca16_dino_{split}_{arch}_{patch_size}.h5')
+    # return os.path.join(out_dir, f'pca32_dino_{split}_{arch}_{patch_size}.h5')
+    return os.path.join(out_dir, f'dino_{split}_{arch}_{patch_size}.h5')
+
+
+def load_dino_hdf5(filepath: str) -> h5py.File:
+    print(f"Loading DINO features from file {filepath}")
+    return h5py.File(filepath, 'r')
+
 
 
 @MODELS.register_module()
@@ -67,6 +88,62 @@ class DinoPoseEstimator(BasePoseEstimator):
         if dino_neck is not None:
             self.dino_neck = MODELS.build(dino_neck)
 
+        self.dino_hdf5 = None
+        self.dino_features = {}
+
+        if True:
+            split = 'train-split1'
+            dino_file = get_dinov2_filepath(split=split)
+            if dino_file is not None:
+                assert os.path.isfile(dino_file), f"Could not find DINO feature file {dino_file}"
+                self.dino_hdf5 = load_dino_hdf5(dino_file)
+                # t = time.time()
+                # print("loading dino....")
+                # for i, idx in enumerate(self.attentions):
+                #     if i % 200 == 0:
+                #         print(i)
+                #     try:
+                #         a = np.array(self.attentions[str(idx)]).astype(np.float16)
+                #         # attentions[i] = torch.tensor(a, device=device)
+                #         self.dino_features[idx] = a
+                #     except:
+                #         pass
+                # self.dino_features = attentions
+                # print(f"t_loadalldino={1000 * (time.time() - t):.0f}ms")
+                # np.save('test_attentions.npy', self.dino_features)
+                # t = time.time()
+                # self.dino_features = np.load('test_attentions.npy')
+                # print(f"t_loadalldino_numpy={1000 * (time.time() - t):.0f}ms")
+
+    def _get_dino_features(self, idx: int) -> np.ndarray:
+        key = str(idx)
+        # if key not in self.dino_features:
+        #     self.dino_features[key] = np.array(self.dino_hdf5[key])
+        # return self.dino_features[key]
+        return np.array(self.dino_hdf5[key])
+
+    def _load_dino_batch(self, data):
+        t = time.time()
+        # dino_dim = 384
+        # features = torch.zeros((len(data['data_samples']), dino_dim, 64, 64), device=self.data_preprocessor.device)
+        # ids = [s.id for s in data['data_samples']]
+        # flips = [s.flip for s in data['data_samples']]
+        # for i, idx in enumerate(ids):
+        #     a = self._get_dino_features(idx)
+        #     # flip = l1.flip[i] if l1.flip is not None else False
+        #     if flips[i]:
+        #         a = a[:, :, ::-1].copy()
+        #     features[i] = torch.tensor(a, device=features.device)
+        for i, data_sample in enumerate(data['data_samples']):
+            feat = self._get_dino_features(data_sample.id)
+            # flip = l1.flip[i] if l1.flip is not None else False
+            if data_sample.flip:
+                feat = feat[:, :, ::-1].copy()
+            data_sample.set_data({'dino': feat})
+        # data['dino'] = features
+        print(f"t1={1000 * (time.time() - t):.0f}ms")
+        return data
+
     def train_step(self, data: Union[dict, tuple, list],
                    optim_wrapper: OptimWrapper) -> Dict[str, torch.Tensor]:
         """Implements the default model training process including
@@ -94,21 +171,48 @@ class DinoPoseEstimator(BasePoseEstimator):
         Returns:
             Dict[str, torch.Tensor]: A ``dict`` of tensor for logging.
         """
+
         # Enable automatic mixed precision training context.
         with optim_wrapper.optim_context(self):
             data = self.data_preprocessor(data, True)
+            # data = self._load_dino_batch(data)
             losses, outputs = self._run_forward(data, mode='loss')  # type: ignore
         parsed_losses, log_vars = self.parse_losses(losses)  # type: ignore
         log_vars['outputs'] = outputs
         optim_wrapper.update_params(parsed_losses)
         return log_vars
 
-    def _predict_batch_dino(self, data_samples):
-        attentions = torch.tensor(np.array([s.attentions for s in data_samples]), device=self.data_preprocessor.device)
-        x = self.dino_encoder(attentions)
-        attentions_emb = self.dino_neck(x)
-        attentions_emb = torch.nn.functional.normalize(attentions_emb, dim=1)
-        return attentions_emb
+    def get_dino_inputs(self, data_samples):
+        return torch.stack([s.dino for s in data_samples])
+
+    def extract_emb(self, inputs: Tensor) -> Tuple[Tensor]:
+        # t = time.time()
+        # attentions = torch.tensor(np.array([s.dino for s in data_samples]), device=self.data_preprocessor.device)
+        # dino_warp_mats = torch.tensor(np.array([s.dino_warp_mat for s in data_samples]), device=self.data_preprocessor.device)
+        # attentions = kornia.geometry.affine(attentions, dino_warp_mats)
+        # print(f"t_dino_warp={1000 * (time.time() - t):.0f}ms")
+
+        x = self.dino_encoder(inputs)
+        x = self.dino_neck(x)
+        x = torch.nn.functional.normalize(x, dim=1)
+        return (x, )
+
+    def extract_feat(self, inputs: Tensor) -> Tuple[Tensor]:
+        """Extract features.
+
+        Args:
+            inputs (Tensor): Image tensor with shape (N, C, H ,W).
+
+        Returns:
+            tuple[Tensor]: Multi-level features that may have various
+            resolutions.
+        """
+        # x = self.backbone(inputs)
+        # if self.with_neck:
+        #     x = self.neck(x)
+        x = self.extract_emb(inputs)
+        # x = self._predict_batch_dino(data_samples)
+        return x
 
     def loss(self, inputs: Tensor, data_samples: SampleList) -> tuple:
         """Calculate losses from a batch of inputs and data samples.
@@ -122,16 +226,13 @@ class DinoPoseEstimator(BasePoseEstimator):
             dict: A dictionary of losses.
         """
 
-        attentions_emb = self._predict_batch_dino(data_samples)
-        # feats = self.extract_feat(inputs)
-        feats = attentions_emb
+        inputs = self.get_dino_inputs(data_samples)
 
-        pred_fields = self.head.forward([feats])
-        gt_heatmaps = torch.stack(
-            [d.gt_fields.heatmaps for d in data_samples])
-        keypoint_weights = torch.cat([
-            d.gt_instance_labels.keypoint_weights for d in data_samples
-        ])
+        feats = self.extract_feat(inputs)
+
+        pred_fields = self.head.forward(feats)
+        gt_heatmaps = torch.stack([d.gt_fields.heatmaps for d in data_samples])
+        keypoint_weights = torch.cat([d.gt_instance_labels.keypoint_weights for d in data_samples])
 
         # calculate losses
         losses = dict()

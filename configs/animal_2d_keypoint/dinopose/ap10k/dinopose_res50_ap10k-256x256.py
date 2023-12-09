@@ -27,9 +27,11 @@ optim_wrapper = dict(optimizer=dict(
 auto_scale_lr = dict(base_batch_size=512)
 
 # hooks
-default_hooks = dict(checkpoint=dict(save_best='coco/AP', rule='greater'),
-                     visualization=dict(type='TrainVisualizationHook', enable=True, interval=1, wait_time=0),
-                     )
+default_hooks = dict(
+    checkpoint=dict(save_best='coco/AP', rule='greater'),
+    # visualization=dict(type='TrainVisualizationHook', enable=True, interval=20, wait_time=5),
+    load_dino=dict(type='LoadDinoHook'),
+)
 
 # codec settings
 codec = dict(
@@ -47,7 +49,9 @@ model = dict(
         type='ResNet',
         depth=50,
         in_channels=384,
-        deep_stem=True,
+        deep_stem=False,
+        # stem_channels=32,
+        # base_channels=32,
         num_stages=3,
         strides=(1, 2, 1),
         dilations=(1, 1, 1),
@@ -56,7 +60,7 @@ model = dict(
     ),
     dino_neck=dict(
         type='HeatmapHead',
-        in_channels=1024,
+        in_channels=2*512,
         out_channels=17),
     head=dict(
         type='HeatmapHead',
@@ -91,18 +95,17 @@ data_root = '/home/browatbn/dev/datasets/animal_data/ap-10k/'
 train_pipeline = [
     dict(type='LoadImage'),
     dict(type='GetBBoxCenterScale'),
-    # dict(type='RandomFlip', direction='horizontal'),
-    # dict(type='RandomHalfBody'),
-    dict(type='RandomBBoxTransform', rotate_prob=1),
-    dict(type='LoadDino'),
+    dict(type='RandomFlip', direction='horizontal'),
+    dict(type='RandomHalfBody'),
+    dict(type='RandomBBoxTransform'),
+    # dict(type='LoadDino'),
     dict(type='TopdownAffine', input_size=codec['input_size']),
-    dict(type='TopdownAffineDino', input_size=codec['input_size'],
-         input_size_dino=codec['heatmap_size']),
+    dict(type='TopdownAffineDino', input_size=codec['input_size'], input_size_dino=codec['heatmap_size']),
     dict(type='GenerateTarget', encoder=codec),
     dict(type='PackPoseInputs',
          meta_keys=('id', 'img_id', 'img_path', 'category_id', 'crowd_index', 'ori_shape', 'img_shape',
         'input_size', 'input_center', 'input_scale', 'flip', 'flip_direction', 'flip_indices',
-        'raw_ann_info', 'dataset_name', 'attentions'),
+        'raw_ann_info', 'dataset_name', 'dino_warp_mat'),
          pack_transformed=True)
 ]
 val_pipeline = [
@@ -114,8 +117,8 @@ val_pipeline = [
 
 # data loaders
 train_dataloader = dict(
-    batch_size=5,
-    num_workers=0,
+    batch_size=32,
+    num_workers=4,
     persistent_workers=False,
     sampler=dict(type='DefaultSampler', shuffle=True),
     dataset=dict(

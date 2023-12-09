@@ -2,6 +2,7 @@
 from typing import Optional
 
 import numpy as np
+import time
 from mmcv.transforms import LoadImageFromFile
 
 from mmpose.registry import TRANSFORMS
@@ -101,8 +102,11 @@ class LoadDino(BaseTransform):
         Returns:
             dict: The result dict.
         """
+        t = time.time()
         a = self._get_dino_features(results['id'])
         if results.get('flip', False):
-            a = a[:, :, ::-1]
+        #     # a = a[:, :, ::-1].copy()
+            a = np.flip(a, axis=2).copy()
         results['attentions'] = a
+        # print(f"t_loaddino={1000 * (time.time() - t)}ms")
         return results

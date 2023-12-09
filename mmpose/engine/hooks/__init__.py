@@ -4,8 +4,9 @@ from .ema_hook import ExpMomentumEMA
 from .mode_switch_hooks import YOLOXPoseModeSwitchHook
 from .sync_norm_hook import SyncNormHook
 from .visualization_hook import PoseVisualizationHook
+from .load_dino_hook import LoadDinoHook
 
 __all__ = [
     'PoseVisualizationHook', 'ExpMomentumEMA', 'BadCaseAnalysisHook',
-    'YOLOXPoseModeSwitchHook', 'SyncNormHook'
+    'YOLOXPoseModeSwitchHook', 'SyncNormHook', 'LoadDinoHook'
 ]

@@ -237,10 +237,10 @@ class TrainVisualizationHook(Hook):
         total_curr_iter = runner.iter + batch_idx
 
         if total_curr_iter % self.interval == 0:
-            attentions = np.array([s.attentions for s in data_batch['data_samples']])
             images = torch.stack(data_batch['inputs'])
+            attentions = np.array([s.dino.cpu().numpy() for s in data_batch['data_samples']])
             disp_dino = self.vi.visualize_batch(images=images, attentions=attentions)
-            disp_keypoints = create_keypoint_result_figure(images, outputs['outputs'], data_batch['data_samples'])
             cv2.imshow("Batch", cv2.cvtColor(disp_dino, cv2.COLOR_RGB2BGR))
+            disp_keypoints = create_keypoint_result_figure(images, outputs['outputs'], data_batch['data_samples'])
             cv2.imshow("Predicted Keypoints", cv2.cvtColor(disp_keypoints, cv2.COLOR_RGB2BGR))
             cv2.waitKey(self.wait_time)

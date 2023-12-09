@@ -624,19 +624,29 @@ class ResNet(BaseBackbone):
                     norm_cfg=self.norm_cfg,
                     inplace=True))
         else:
+            kernel_size = 7
+            padding = 3
+            stride = 2
+            if in_channels > 3:
+                kernel_size = 3
+                padding = 1
+                stride = 2
             self.conv1 = build_conv_layer(
                 self.conv_cfg,
                 in_channels,
                 stem_channels,
-                kernel_size=7,
-                stride=2,
-                padding=3,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
                 bias=False)
             self.norm1_name, norm1 = build_norm_layer(
                 self.norm_cfg, stem_channels, postfix=1)
             self.add_module(self.norm1_name, norm1)
             self.relu = nn.ReLU(inplace=True)
+        # if in_channels == 3:
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        # else:
+        #     self.maxpool = nn.Identity
 
     def _freeze_stages(self):
         """Freeze parameters."""

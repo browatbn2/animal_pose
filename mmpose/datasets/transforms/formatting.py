@@ -11,8 +11,7 @@ from mmpose.registry import TRANSFORMS
 from mmpose.structures import MultilevelPixelData, PoseDataSample
 
 
-def image_to_tensor(img: Union[np.ndarray,
-                               Sequence[np.ndarray]]) -> torch.torch.Tensor:
+def image_to_tensor(img: Union[np.ndarray, Sequence[np.ndarray]]) -> torch.torch.Tensor:
     """Translate image or sequence of images to tensor. Multiple image tensors
     will be stacked.
 
@@ -128,7 +127,8 @@ class PackPoseInputs(BaseTransform):
         heatmap_mask='heatmap_mask',
         heatmap_weights='heatmap_weights',
         displacements='displacements',
-        displacement_weights='displacement_weights')
+        displacement_weights='displacement_weights',
+    )
 
     # items in `label_mapping_table` will be packed into
     # PoseDataSample.gt_instance_labels and converted to Tensor. These items
@@ -241,6 +241,10 @@ class PackPoseInputs(BaseTransform):
         packed_results = dict()
         packed_results['inputs'] = inputs_tensor
         packed_results['data_samples'] = data_sample
+
+        # if 'attentions' in results:
+        #     # packed_results['data_samples'].set_data({'attentions': results['attentions'][:64]})
+        #     packed_results['attentions'] = results['attentions']
 
         return packed_results
 

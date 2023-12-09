@@ -1,6 +1,8 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from typing import Dict, Optional, Tuple
 
+import kornia
+import torch
 import cv2
 import numpy as np
 from mmcv.transforms import BaseTransform
@@ -10,7 +12,7 @@ from mmpose.registry import TRANSFORMS
 from mmpose.structures.bbox import get_udp_warp_matrix, get_warp_matrix
 
 import matplotlib.pyplot as plt
-import kornia
+from mmpose.structures.bbox import flip_bbox
 
 
 @TRANSFORMS.register_module()
@@ -187,29 +189,31 @@ class TopdownAffineDino(TopdownAffine):
         results['bbox_scale_orig'] = self._fix_aspect_ratio(
             results['bbox_scale_orig'], aspect_ratio=w / h)
 
-        warp_mat_orig = get_warp_matrix(results['bbox_center_orig'][0],
-                                        results['bbox_scale_orig'][0],
-                                        rot=0,
-                                        output_size=self.input_size_dino)
+        if results['flip']:
+            results['bbox_center_orig'] = flip_bbox(
+                results['bbox_center_orig'],
+                image_size=results['ori_shape'][::-1],
+                bbox_format='center',
+                direction=results['flip_direction'])
+
+        warp_mat_orig = get_warp_matrix(results['bbox_center_orig'][0], results['bbox_scale_orig'][0],
+                                        rot=0, output_size=self.input_size_dino)
         warp_mat_orig_inv = np.linalg.inv(np.concatenate([warp_mat_orig, [[0.0, 0.0, 1.0]]]))
 
         t = _warp_mat @ warp_mat_orig_inv
 
-        import torch
-        dino_wrp = kornia.geometry.affine(torch.tensor(results['attentions']), torch.tensor(t[:2]).float())
+        results['dino_warp_mat'] = t[:2].astype(np.float32)
+        # dino_wrp = kornia.geometry.affine(torch.tensor(results['attentions']), torch.tensor(t[:2]).float())
 
-        # att = results['attentions'][0].astype(np.float32)
-        # att_wrp = cv2.warpAffine(att, t[:2], warp_size, flags=cv2.INTER_LINEAR)
+        # img_orig = cv2.imread(results['img_path'])
+        # fig, ax = plt.subplots(1, 4)
+        # ax[0].imshow(results['img'])
+        # # ax[1].imshow(att_wrp)
+        # ax[2].imshow(img_orig)
+        # ax[3].imshow(dino_wrp[0].numpy())
+        # plt.show()
 
-        img_orig = cv2.imread(results['img_path'])
-        fig, ax = plt.subplots(1, 4)
-        ax[0].imshow(results['img'])
-        # ax[1].imshow(att_wrp)
-        ax[2].imshow(img_orig)
-        ax[3].imshow(dino_wrp[0])
-        plt.show()
-
-        results['attentions'] = dino_wrp
+        # results['attentions'] = dino_wrp.numpy()
 
         return results
 
