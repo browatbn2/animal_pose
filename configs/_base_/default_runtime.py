@@ -3,17 +3,18 @@ default_scope = 'mmpose'
 # hooks
 default_hooks = dict(
     timer=dict(type='IterTimerHook'),
-    logger=dict(type='LoggerHook', interval=10),
+    # logger=dict(type='LoggerHook', interval=20),
     param_scheduler=dict(type='ParamSchedulerHook'),
     checkpoint=dict(type='CheckpointHook', interval=1),
-    sampler_seed=dict(type='DistSamplerSeedHook'),
-    visualization=dict(type='PoseVisualizationHook', enable=False),
-    badcase=dict(
-        type='BadCaseAnalysisHook',
-        enable=False,
-        out_dir='badcase',
-        metric_type='loss',
-        badcase_thr=5))
+    # sampler_seed=dict(type='DistSamplerSeedHook'),
+    # visualization=dict(type='PoseVisualizationHook', enable=False),
+    # badcase=dict(
+    #     type='BadCaseAnalysisHook',
+    #     enable=False,
+    #     out_dir='badcase',
+    #     metric_type='loss',
+    #     badcase_thr=5)
+)
 
 # custom hooks
 custom_hooks = [

@@ -1,12 +1,12 @@
 _base_ = ['../../../_base_/default_runtime.py']
 
 # runtime
-train_cfg = dict(max_epochs=210, val_interval=1)
+train_cfg = dict(max_epochs=510, val_interval=1)
 
 # optimizer
 optim_wrapper = dict(optimizer=dict(
     type='Adam',
-    lr=2e-4,
+    lr=1e-4,
 ))
 
 # learning policy
@@ -26,16 +26,25 @@ optim_wrapper = dict(optimizer=dict(
 # automatically scaling LR based on the actual training batch size
 auto_scale_lr = dict(base_batch_size=512)
 
+vis_interval = 40
+vis_wait_time = 5
+
 # hooks
 default_hooks = dict(
+    logger=dict(type='LoggerHook', interval=40),
     checkpoint=dict(save_best='coco/AP', rule='greater'),
-    visualization=dict(type='TrainVisualizationHook', enable=True, interval=1, wait_time=0),
+    # visualization_train=dict(type='TrainVisualizationHook', enable=True, interval=vis_interval, wait_time=vis_wait_time),
+    # visualization_val=dict(type='TrainVisualizationHook', mode='val', enable=True, interval=vis_interval, wait_time=vis_wait_time),
+    # visualization_test=dict(type='TrainVisualizationHook', mode='test', enable=True, interval=vis_interval, wait_time=vis_wait_time),
     load_dino=dict(type='LoadDinoHook'),
 )
 
 # codec settings
 codec = dict(
     type='MSRAHeatmap', input_size=(256, 256), heatmap_size=(64, 64), sigma=2)
+
+
+embedding_dim = 32
 
 # model settings
 model = dict(
@@ -58,17 +67,17 @@ model = dict(
         out_indices=(2,),
         init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50'),
     ),
+    dino_decoder=dict(
+        type='HeatmapHead',
+        in_channels=32,
+        out_channels=384,
+        deconv_out_channels=None,
+    ),
     dino_neck=dict(
         type='HeatmapHead',
         in_channels=2*512,
-        out_channels=17),
-    head=dict(
-        type='HeatmapHead',
-        in_channels=17,
-        out_channels=17,
-        deconv_out_channels=None,
-        loss=dict(type='KeypointMSELoss', use_target_weight=True),
-        decoder=codec),
+        out_channels=embedding_dim
+    ),
     backbone=dict(
         type='ResNet',
         depth=50,
@@ -77,7 +86,14 @@ model = dict(
     neck=dict(
         type='HeatmapHead',
         in_channels=2048,
-        out_channels=17),
+        out_channels=embedding_dim),
+    head=dict(
+        type='HeatmapHead',
+        in_channels=embedding_dim,
+        out_channels=17,
+        deconv_out_channels=None,
+        loss=dict(type='KeypointMSELoss', use_target_weight=True),
+        decoder=codec),
     test_cfg=dict(
         flip_test=True,
         flip_mode='heatmap',
@@ -105,7 +121,7 @@ train_pipeline = [
     dict(type='PackPoseInputs',
          meta_keys=('id', 'img_id', 'img_path', 'category_id', 'crowd_index', 'ori_shape', 'img_shape',
         'input_size', 'input_center', 'input_scale', 'flip', 'flip_direction', 'flip_indices',
-        'raw_ann_info', 'dataset_name', 'dino_warp_mat'),
+        'raw_ann_info', 'dataset_name', 'dino_warp_mat', 'mask'),
          pack_transformed=True)
 ]
 val_pipeline = [
@@ -113,10 +129,11 @@ val_pipeline = [
     dict(type='GetBBoxCenterScale'),
     dict(type='TopdownAffine', input_size=codec['input_size']),
     dict(type='TopdownAffineDino', input_size=codec['input_size'], input_size_dino=codec['heatmap_size']),
+    dict(type='GenerateTarget', encoder=codec),
     dict(type='PackPoseInputs',
          meta_keys=('id', 'img_id', 'img_path', 'category_id', 'crowd_index', 'ori_shape', 'img_shape',
                     'input_size', 'input_center', 'input_scale', 'flip', 'flip_direction', 'flip_indices',
-                    'raw_ann_info', 'dataset_name', 'dino_warp_mat'),
+                    'raw_ann_info', 'dataset_name', 'dino_warp_mat', 'mask'),
          pack_transformed=True)
 ]
 

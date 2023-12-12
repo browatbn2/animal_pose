@@ -208,7 +208,10 @@ class HeatmapHead(BaseHead):
         Returns:
             Tensor: output heatmap.
         """
-        x = feats[-1]
+        if isinstance(feats, tuple) or isinstance(feats, list):
+            x = feats[-1]
+        else:
+            x = feats
 
         x = self.deconv_layers(x)
         x = self.conv_layers(x)
@@ -300,7 +303,7 @@ class HeatmapHead(BaseHead):
 
         # calculate losses
         losses = dict()
-        loss = self.loss_module(pred_fields, gt_heatmaps, keypoint_weights)
+        loss = self.loss_module(pred_fields, gt_heatmaps, keypoint_weights) * 100
 
         losses.update(loss_kpt=loss)
 

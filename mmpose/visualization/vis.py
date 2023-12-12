@@ -52,6 +52,11 @@ def color_map(data, vmin=None, vmax=None, cmap=plt.cm.viridis):
     return cm
 
 
+def to_cmap_images(tensor, vmin=0, vmax=1.0, cmap=plt.cm.viridis):
+    cmapped = [color_map(img, vmin=vmin, vmax=vmax, cmap=cmap) for img in to_numpy(tensor)]
+    return [(img * 255).astype(np.uint8) for img in cmapped]
+
+
 # take an array of shape (n, height, width) or (n, height, width, channels)
 # and visualize each (height, width) thing in a grid of size approx. sqrt(n) by sqrt(n)
 def make_grid(data, padsize=2, padval=255, nCols=10, dsize=None, fx=None, fy=None, normalize=False):
@@ -295,7 +300,7 @@ def add_landmarks_to_images(images, landmarks, color=None, radius=2, gt_landmark
         cv2.polylines(img, [pts[76:88]], isClosed=True, color=color, lineType=cv2.LINE_AA)  # inner mouth
         cv2.polylines(img, [pts[88:96]], isClosed=True, color=color, lineType=cv2.LINE_AA)  # inner mouth
 
-    def draw_offset_lines(img, lms, gt_lms, errs):
+    def draw_offset_lines(img, lms, gt_lms, errs, kp_vis):
         if gt_lms.sum() == 0:
             return
         if lm_errs is None:
@@ -308,10 +313,12 @@ def add_landmarks_to_images(images, landmarks, color=None, radius=2, gt_landmark
             colors *= 255
         for i, (p1, p2) in enumerate(zip(lms, gt_lms)):
             if landmarks_to_draw is None or i in landmarks_to_draw:
-                visible = errs is None or not np.isnan(errs[i])
+                # visible = errs is None or not np.isnan(errs[i])
+                visible = kp_vis is None or kp_vis[i]
                 valid_pair = not np.isnan(p1).any() and not np.isnan(p2).any() and p1.min() > 0 and visible
-                if valid_pair:
-                    cv2.line(img, tuple(p1.astype(int)), tuple(p2.astype(int)), colors[i], thickness=offset_line_thickness, lineType=cv2.LINE_AA)
+                if not valid_pair:
+                    continue
+                cv2.line(img, tuple(p1.astype(int)), tuple(p2.astype(int)), colors[i], thickness=offset_line_thickness, lineType=cv2.LINE_AA)
 
     if landmarks is None:
         return images
@@ -337,7 +344,7 @@ def add_landmarks_to_images(images, landmarks, color=None, radius=2, gt_landmark
                 dists = None
                 if lm_errs is not None:
                     dists = lm_errs[img_id]
-                draw_offset_lines(new_images[img_id], landmarks[img_id], gt_landmarks[img_id], dists)
+                draw_offset_lines(new_images[img_id], landmarks[img_id], gt_landmarks[img_id], dists, keypoints_visible[img_id])
 
     for img_id, (disp, lm)  in enumerate(zip(new_images, landmarks)):
         if len(lm) in [68, 21, 19, 98, 8, 5]:
@@ -430,7 +437,7 @@ def visualize_batch_pose(
     #     landmarks_to_draw = range(num_landmarks)
 
     disp_images = to_disp_images(images[:nimgs], denorm=True)
-    disp_images = [cv2.cvtColor(im, cv2.COLOR_RGB2BGR) for im in disp_images]
+    # disp_images = [cv2.cvtColor(im, cv2.COLOR_RGB2BGR) for im in disp_images]
 
     # show heatmaps
     if heatmaps is not None and show_heatmaps:
@@ -493,7 +500,7 @@ def create_keypoint_result_figure(inputs: Tensor, data_samples: SampleList):
     keypoints_gt = np.concatenate([s.gt_instances[0].transformed_keypoints for s in data_samples])
     keypoints_visible = np.concatenate([s.gt_instances[0].keypoints_visible for s in data_samples])
     heatmaps_gt = np.stack([to_numpy(s.gt_fields.heatmaps) for s in data_samples])
-    heatmaps_pred = np.stack([to_numpy(s.pred_fields) for s in data_samples])
+    heatmaps_pred = np.stack([to_numpy(s.pred_fields.heatmaps) for s in data_samples])
     pred, _ = get_heatmap_maximum(to_numpy(heatmaps_pred))
     rows = []
 
@@ -699,6 +706,11 @@ class Visualization(object):
     def visualize_batch(self,
                         images,
                         attentions,
+                        attentions_recon=None,
+                        attentions_recon_rgb=None,
+                        feats_dino=None,
+                        feats_rgb=None,
+                        masks=None,
                         horizontal=True,
                         nimgs=4):
 
@@ -711,7 +723,7 @@ class Visualization(object):
         f = 1.0 * (256 / H)
 
         disp_X1 = to_disp_images(images[:nimgs])
-        disp_X1 = [cv2.cvtColor(im, cv2.COLOR_RGB2BGR) for im in disp_X1]
+        # disp_X1 = [cv2.cvtColor(im, cv2.COLOR_RGB2BGR) for im in disp_X1]
         rows.append(make_grid(disp_X1, nCols=ncols))
 
         # X1_feats = attentions
@@ -731,10 +743,19 @@ class Visualization(object):
 
         if attentions is not None:
             rows.append(make_grid(self.draw_attentions(attentions[:nimgs]), nCols=ncols))
-        # if attentions_recon is not None:
-        #     rows.append(make_grid(self.draw_attentions(batch1.attentions_recon[:nimgs]), nCols=ncols))
-        # if attentions_emb is not None:
-        #     rows.append(make_grid(self.draw_features_pca(batch1.attentions_emb[:nimgs]), nCols=ncols))
+        if attentions_recon is not None:
+            rows.append(make_grid(self.draw_attentions(attentions_recon[:nimgs]), nCols=ncols))
+        if attentions_recon_rgb is not None:
+            rows.append(make_grid(self.draw_attentions(attentions_recon_rgb[:nimgs]), nCols=ncols))
+        if feats_dino is not None:
+            rows.append(make_grid(self.draw_features_pca(feats_dino[:nimgs]), nCols=ncols))
+        if feats_dino is not None:
+            rows.append(make_grid(self.draw_features_pca(feats_rgb[:nimgs]), nCols=ncols))
+
+        if masks is not None:
+            _masks = masks[:nimgs].byte()
+            _masks = to_numpy(F.interpolate(_masks, size=(256, 256)))[:, 0]
+            rows.append(make_grid(to_cmap_images(_masks), nCols=ncols))
 
         ncols_panel = len(rows) if horizontal else 1
         return make_grid(rows, nCols=ncols_panel, normalize=False, fx=f, fy=f)

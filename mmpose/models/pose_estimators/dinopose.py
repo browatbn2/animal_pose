@@ -21,6 +21,9 @@ from mmpose.evaluation.functional import pose_pck_accuracy
 from mmengine.structures import PixelData
 from mmpose.models.utils.tta import flip_heatmaps
 
+import cv2
+from mmpose.visualization.vis import create_keypoint_result_figure, Visualization
+
 
 def get_dinov2_filepath(split):
     out_dir = '/home/browatbn/dev/data/dino'
@@ -37,6 +40,8 @@ def load_dino_hdf5(filepath: str) -> h5py.File:
     print(f"Loading DINO features from file {filepath}")
     return h5py.File(filepath, 'r')
 
+
+total_curr_iter = 0
 
 
 @MODELS.register_module()
@@ -70,6 +75,7 @@ class DinoPoseEstimator(BasePoseEstimator):
                  head: OptConfigType = None,
                  dino_encoder: ConfigType = None,
                  dino_neck: OptConfigType = None,
+                 dino_decoder: ConfigType = None,
                  train_cfg: OptConfigType = None,
                  test_cfg: OptConfigType = None,
                  data_preprocessor: OptConfigType = None,
@@ -90,8 +96,14 @@ class DinoPoseEstimator(BasePoseEstimator):
         if dino_neck is not None:
             self.dino_neck = MODELS.build(dino_neck)
 
+        if dino_decoder is not None:
+            self.dino_decoder = MODELS.build(dino_decoder)
+
         self.dino_hdf5 = None
         self.dino_features = {}
+
+        self.batch_idx = 0
+        self.vi = Visualization()
 
         if True:
             split = 'train-split1'
@@ -116,6 +128,8 @@ class DinoPoseEstimator(BasePoseEstimator):
                 # t = time.time()
                 # self.dino_features = np.load('test_attentions.npy')
                 # print(f"t_loadalldino_numpy={1000 * (time.time() - t):.0f}ms")
+
+
 
     def _get_dino_features(self, idx: int) -> np.ndarray:
         key = str(idx)
@@ -146,7 +160,9 @@ class DinoPoseEstimator(BasePoseEstimator):
         print(f"t1={1000 * (time.time() - t):.0f}ms")
         return data
 
-    def get_dino_inputs(self, data_samples):
+    def get_dino_inputs(self, data_samples) -> Tensor | None:
+        if 'dino' not in data_samples[0]:
+            return None
         return torch.stack([s.dino for s in data_samples])
 
     def extract_emb(self, inputs: Tensor) -> Tuple[Tensor]:
@@ -155,7 +171,6 @@ class DinoPoseEstimator(BasePoseEstimator):
         # dino_warp_mats = torch.tensor(np.array([s.dino_warp_mat for s in data_samples]), device=self.data_preprocessor.device)
         # attentions = kornia.geometry.affine(attentions, dino_warp_mats)
         # print(f"t_dino_warp={1000 * (time.time() - t):.0f}ms")
-
         x = self.dino_encoder(inputs)
         x = self.dino_neck(x)
         x = torch.nn.functional.normalize(x, dim=1)
@@ -171,12 +186,10 @@ class DinoPoseEstimator(BasePoseEstimator):
             tuple[Tensor]: Multi-level features that may have various
             resolutions.
         """
-        # x = self.backbone(inputs)
-        # if self.with_neck:
-        #     x = self.neck(x)
-        x = self.extract_emb(inputs)
-        # x = self._predict_batch_dino(data_samples)
-        return x
+        x = self.backbone(inputs)
+        x = self.neck(x)
+        x = torch.nn.functional.normalize(x, dim=1)
+        return (x, )
 
     def train_step(self, data: Union[dict, tuple, list],
                    optim_wrapper: OptimWrapper) -> Dict[str, torch.Tensor]:
@@ -209,27 +222,51 @@ class DinoPoseEstimator(BasePoseEstimator):
         # Enable automatic mixed precision training context.
         with optim_wrapper.optim_context(self):
             _data = self.data_preprocessor(data, True)
-            # data = self._load_dino_batch(data)
-            losses, results = self.forward(**_data, train=True)  # type: ignore
-            data['data_samples'] = results
+            losses, _ = self.forward(**_data, train=True)  # type: ignore
+            # data['data_samples'] = results
         parsed_losses, log_vars = self.parse_losses(losses)  # type: ignore
-        # log_vars['outputs'] = results
         optim_wrapper.update_params(parsed_losses)
         return log_vars
 
     def val_step(self, data: Union[dict, tuple, list]) -> list:
-        data = self.data_preprocessor(data, False)
-        return self.predict(data, train=False)  # type: ignore
+        _data = self.data_preprocessor(data, True)
+        losses, results = self.forward(**_data, train=False)  # type: ignore
+        # data['data_samples'] = results
+        _, log_vars = self.parse_losses(losses)  # type: ignore
+        return [results, log_vars]
 
     def test_step(self, data: Union[dict, tuple, list]) -> list:
-        data = self.data_preprocessor(data, False)
-        return self.predict(data, train=False)  # type: ignore
+        _data = self.data_preprocessor(data, True)
+        losses, results = self.forward(**_data, train=False)  # type: ignore
+        # data['data_samples'] = results
+        _, log_vars = self.parse_losses(losses)  # type: ignore
+        return [results, log_vars]
+        # data_ = self.data_preprocessor(data, False)
+        # losses, results = self.predict(**_data, train=False)  # type: ignore
+        # data['data_samples'] = results
 
     def loss(self, inputs: Tensor, data_samples: SampleList) -> dict:
         pass
 
     def predict(self, inputs: Tensor, data_samples: SampleList) -> SampleList:
         pass
+
+    def forward_head(self, head, feats, data_samples, train):
+        if not train and self.test_cfg.get('flip_test', False):
+            # TTA: flip test -> feats = [orig, flipped]
+            assert isinstance(feats, list) and len(feats) == 2
+            flip_indices = data_samples[0].metainfo['flip_indices']
+            _feats, _feats_flip = feats
+            _pred_heatmaps = head.forward(_feats)
+            _pred_heatmaps_flip = flip_heatmaps(
+                head.forward(_feats_flip),
+                flip_mode=self.test_cfg.get('flip_mode', 'heatmap'),
+                flip_indices=flip_indices,
+                shift_heatmap=self.test_cfg.get('shift_heatmap', False))
+            pred_heatmaps = (_pred_heatmaps + _pred_heatmaps_flip) * 0.5
+        else:
+            pred_heatmaps = head.forward(feats)
+        return pred_heatmaps
 
     def forward(self, inputs: Tensor, data_samples: SampleList, train=False) -> tuple:
         """Calculate losses from a batch of inputs and data samples.
@@ -242,8 +279,18 @@ class DinoPoseEstimator(BasePoseEstimator):
         Returns:
             dict: A dictionary of losses.
         """
+        inputs_dino = self.get_dino_inputs(data_samples)
 
-        inputs = self.get_dino_inputs(data_samples)
+        masks_rgb = np.stack([s.mask for s in data_samples])
+        masks_dino = inputs_dino.sum(axis=1, keepdims=True) != 0
+
+        masks = torch.tensor(masks_rgb, device='cuda').unsqueeze(1)
+        masks = torch.nn.functional.interpolate(masks.float(), size=(64, 64)).bool()
+        masks = masks_dino & masks
+        m_feats = masks.repeat(1, 32, 1, 1)
+        m_recon = masks.repeat(1, 384, 1, 1)
+
+        losses = dict()
 
         if not train and self.test_cfg.get('flip_test', False):
             _feats = self.extract_feat(inputs)
@@ -251,29 +298,49 @@ class DinoPoseEstimator(BasePoseEstimator):
             feats = [_feats, _feats_flip]
         else:
             feats = self.extract_feat(inputs)
+            # noise = torch.randn_like(feats[0]).cuda() * 0.005
+            # feats = (feats[0] + noise, )
 
+        inputs_rgb_recon = self.dino_decoder(feats[0])
+
+        # if inputs_dino is not None:
         if not train and self.test_cfg.get('flip_test', False):
-            # TTA: flip test -> feats = [orig, flipped]
-            assert isinstance(feats, list) and len(feats) == 2
-            flip_indices = data_samples[0].metainfo['flip_indices']
+            _feats_dino = self.extract_emb(inputs_rgb_recon)
+            _feats_dino_flip = self.extract_emb(inputs_rgb_recon.flip(-1))
+            feats_dino = [_feats_dino, _feats_dino_flip]
             _feats, _feats_flip = feats
-            _pred_heatmaps = self.head.forward(_feats)
-            _pred_heatmaps_flip = flip_heatmaps(
-                self.head.forward(_feats_flip),
-                flip_mode=self.test_cfg.get('flip_mode', 'heatmap'),
-                flip_indices=flip_indices,
-                shift_heatmap=self.test_cfg.get('shift_heatmap', False))
-            pred_heatmaps = (_pred_heatmaps + _pred_heatmaps_flip) * 0.5
+            feats_merged = [(_feats[0] + _feats_dino[0]) / 2.0, (_feats_flip[0] + _feats_dino_flip[0]) / 2.0]
+            loss_dino = torch.nn.functional.mse_loss(_feats[0][m_feats], _feats_dino[0][m_feats]) * 200
+            losses.update(loss_dino=loss_dino)
         else:
-            pred_heatmaps = self.head.forward(feats)
+            feats_dino = self.extract_emb(inputs_rgb_recon)
+            feats_merged = [(feats[0] + feats_dino[0]) / 2.0]
+            # feats_dino_detached = feats_dino[0][m_feats].detach()
+            # loss_dino = torch.nn.functional.mse_loss(feats[0][m_feats], feats_dino_detached) * 200
+            # losses.update(loss_dino=loss_dino)
+
+        # inputs_dino_recon = self.dino_decoder(feats_dino[0])
+        # loss_recon = torch.nn.functional.mse_loss(inputs_dino_recon[m_recon], inputs_dino[m_recon])
+
+        loss_recon = torch.nn.functional.mse_loss(inputs_rgb_recon[m_recon], inputs_dino[m_recon])
+        # loss_recon = (loss_recon + loss_recon_rgb) / 2.0
+        loss_recon = loss_recon * 0.1
+        losses.update(loss_recon=loss_recon)
+
+        pred_heatmaps = self.forward_head(self.head, feats_merged, data_samples, train)
+        pred_heatmaps_rgb = self.forward_head(self.head, feats, data_samples, train)
+        pred_heatmaps_dino = self.forward_head(self.head, feats_dino, data_samples, train)
 
         gt_heatmaps = torch.stack([d.gt_fields.heatmaps for d in data_samples])
         keypoint_weights = torch.cat([d.gt_instance_labels.keypoint_weights for d in data_samples])
 
         # calculate losses
-        losses = dict()
-        loss = self.head.loss_module(pred_heatmaps, gt_heatmaps, keypoint_weights)
-        losses.update(loss_kpt=loss)
+        loss_kpt = self.head.loss_module(pred_heatmaps, gt_heatmaps, keypoint_weights) * 100.0
+        loss_kpt_rgb = self.head.loss_module(pred_heatmaps_rgb, gt_heatmaps, keypoint_weights) * 100.0
+        loss_kpt_dino = self.head.loss_module(pred_heatmaps_dino, gt_heatmaps, keypoint_weights) * 100.0
+        losses.update(loss_kpt=loss_kpt)
+        losses.update(l_kpt_rgb=loss_kpt_rgb)
+        losses.update(l_kpt_dino=loss_kpt_dino)
 
         preds = self.head.decode(pred_heatmaps)
         pred_fields = [PixelData(heatmaps=hm) for hm in pred_heatmaps.detach()]
@@ -281,64 +348,40 @@ class DinoPoseEstimator(BasePoseEstimator):
         # calculate accuracy
         if self.train_cfg.get('compute_acc', True):
             _, avg_acc, _ = pose_pck_accuracy(
-                output=to_numpy(pred_heatmaps),
+                output=to_numpy(pred_heatmaps_rgb),
                 target=to_numpy(gt_heatmaps),
                 mask=to_numpy(keypoint_weights) > 0)
 
             acc_pose = torch.tensor(avg_acc, device=gt_heatmaps.device)
             losses.update(acc_pose=acc_pose)
 
-        # losses.update(
-        #     self.head.loss(feats, data_samples, train_cfg=self.train_cfg))
-
         results = self.add_pred_to_datasample(preds, pred_fields, data_samples)
 
-        return losses, results
+        interval = 40
+        if self.batch_idx % interval == 0:
+            # attentions = np.array([s.dino.cpu().numpy() for s in data_batch['data_samples']])
+            if not train and self.test_cfg.get('flip_test', False):
+                feats_dino = to_numpy(feats_dino[0][0])
+                feats_rgb = to_numpy(feats[0][0])
+            else:
+                feats_dino = to_numpy(feats_dino[0])
+                feats_rgb = to_numpy(feats[0])
+            self.vi.fit_pca(feats_dino[:4])
+            disp_dino = self.vi.visualize_batch(images=inputs,
+                                                attentions=to_numpy(inputs_dino),
+                                                # attentions_recon=to_numpy(inputs_dino_recon),
+                                                # attentions_recon_rgb=to_numpy(inputs_rgb_recon),
+                                                feats_dino=feats_dino,
+                                                feats_rgb=feats_rgb,
+                                                masks=masks)
+            cv2.imshow("Batch", cv2.cvtColor(disp_dino, cv2.COLOR_RGB2BGR))
 
-    # def forward(self, inputs: Tensor, data_samples: SampleList, train=False) -> SampleList:
-    #     """Predict results from a batch of inputs and data samples with post-
-    #     processing.
-    #
-    #     Args:
-    #         inputs (Tensor): Inputs with shape (N, C, H, W)
-    #         data_samples (List[:obj:`PoseDataSample`]): The batch
-    #             data samples
-    #
-    #     Returns:
-    #         list[:obj:`PoseDataSample`]: The pose estimation results of the
-    #         input images. The return value is `PoseDataSample` instances with
-    #         ``pred_instances`` and ``pred_fields``(optional) field , and
-    #         ``pred_instances`` usually contains the following keys:
-    #
-    #             - keypoints (Tensor): predicted keypoint coordinates in shape
-    #                 (num_instances, K, D) where K is the keypoint number and D
-    #                 is the keypoint dimension
-    #             - keypoint_scores (Tensor): predicted keypoint scores in shape
-    #                 (num_instances, K)
-    #     """
-    #     assert self.with_head, (
-    #         'The model must have head to perform prediction.')
-    #
-    #     inputs = self.get_dino_inputs(data_samples)
-    #
-    #     if train==False and self.test_cfg.get('flip_test', False):
-    #         _feats = self.extract_feat(inputs)
-    #         _feats_flip = self.extract_feat(inputs.flip(-1))
-    #         feats = [_feats, _feats_flip]
-    #     else:
-    #         feats = self.extract_feat(inputs)
-    #
-    #     preds = self.head.predict(feats, data_samples, test_cfg=self.test_cfg)
-    #
-    #     if isinstance(preds, tuple):
-    #         batch_pred_instances, batch_pred_fields = preds
-    #     else:
-    #         batch_pred_instances = preds
-    #         batch_pred_fields = None
-    #
-    #     results = self.add_pred_to_datasample(batch_pred_instances, batch_pred_fields, data_samples)
-    #
-    #     return results
+            disp_keypoints = create_keypoint_result_figure(inputs, data_samples)
+            cv2.imshow("Predicted Keypoints", cv2.cvtColor(disp_keypoints, cv2.COLOR_RGB2BGR))
+            cv2.waitKey(int(5))
+
+        self.batch_idx += 1
+        return losses, results
 
     def add_pred_to_datasample(self, batch_pred_instances: InstanceList,
                                batch_pred_fields: Optional[PixelDataList],

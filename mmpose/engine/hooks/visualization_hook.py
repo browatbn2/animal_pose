@@ -1,7 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import os
 import warnings
-from typing import Optional, Sequence
+from typing import Dict, Optional, Sequence, Union
 import numpy as np
 import torch
 
@@ -14,6 +14,8 @@ from mmengine.visualization import Visualizer
 
 from mmpose.registry import HOOKS
 from mmpose.structures import PoseDataSample, merge_data_samples
+
+DATA_BATCH = Optional[Union[dict, tuple, list]]
 
 
 @HOOKS.register_module()
@@ -205,12 +207,13 @@ class TrainVisualizationHook(Hook):
     """
 
     def __init__(
-        self,
-        enable: bool = False,
-        interval: int = 50,
-        kpt_thr: float = 0.3,
-        show: bool = False,
-        wait_time: float = 0.,
+            self,
+            enable: bool = False,
+            interval: int = 50,
+            kpt_thr: float = 0.3,
+            show: bool = False,
+            wait_time: float = 0.,
+            mode='train'
     ):
         # self._visualizer: Visualizer = Visualizer.get_current_instance()
         self.interval = interval
@@ -220,26 +223,28 @@ class TrainVisualizationHook(Hook):
         self.enable = enable
         self._test_index = 0
         self.vi = Visualization()
+        self.mode = mode
 
     def _visualize(self, data_batch: dict):
-            images = torch.stack(data_batch['inputs'])
-            attentions = np.array([s.dino.cpu().numpy() for s in data_batch['data_samples']])
-            disp_dino = self.vi.visualize_batch(images=images, attentions=attentions)
-            cv2.imshow("Batch", cv2.cvtColor(disp_dino, cv2.COLOR_RGB2BGR))
+        images = torch.stack(data_batch['inputs'])
 
-            disp_keypoints = create_keypoint_result_figure(images, outputs['outputs'], data_batch['data_samples'])
-            cv2.imshow("Predicted Keypoints", cv2.cvtColor(disp_keypoints, cv2.COLOR_RGB2BGR))
-            cv2.waitKey(int(self.wait_time))
+        # attentions = np.array([s.dino.cpu().numpy() for s in data_batch['data_samples']])
+        # disp_dino = self.vi.visualize_batch(images=images, attentions=attentions)
+        # cv2.imshow("Batch", cv2.cvtColor(disp_dino, cv2.COLOR_RGB2BGR))
 
-    def after_test_iter(self, runner: Runner, batch_idx: int, data_batch: dict) -> None:
-        """Run after every ``self.interval`` training iterations.
+        disp_keypoints = create_keypoint_result_figure(images, data_batch['data_samples'])
+        cv2.imshow("Predicted Keypoints", cv2.cvtColor(disp_keypoints, cv2.COLOR_RGB2BGR))
+        cv2.waitKey(int(self.wait_time))
 
-        Args:
-            runner (:obj:`Runner`): The runner of the validation process.
-            batch_idx (int): The index of the current batch in the val loop.
-            data_batch (dict): Data from dataloader.
-            outputs (dict): Outputs from train_step.
-        """
+    def _after_iter(self,
+                    runner,
+                    batch_idx: int,
+                    data_batch: DATA_BATCH = None,
+                    outputs: Optional[Union[Sequence, dict]] = None,
+                    mode: str = 'train') -> None:
+        if mode != self.mode:
+            return
+
         if self.enable is False:
             return
 

@@ -133,6 +133,8 @@ class TopdownAffine(BaseTransform):
         results['input_center'] = center
         results['input_scale'] = scale
 
+        results['mask'] = results['img'].sum(axis=2) > 0
+
         return results
 
     def __repr__(self) -> str:

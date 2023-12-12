@@ -26,8 +26,15 @@ optim_wrapper = dict(optimizer=dict(
 # automatically scaling LR based on the actual training batch size
 auto_scale_lr = dict(base_batch_size=512)
 
+vis_interval = 40
+vis_wait_time = 5
+
 # hooks
-default_hooks = dict(checkpoint=dict(save_best='coco/AP', rule='greater'))
+default_hooks = dict(
+    checkpoint=dict(save_best='coco/AP', rule='greater'),
+    logger=dict(type='LoggerHook', interval=40),
+    # visualization_train = dict(type='TrainVisualizationHook', enable=True, interval=vis_interval, wait_time=vis_wait_time),
+)
 
 # codec settings
 codec = dict(
@@ -46,10 +53,15 @@ model = dict(
         depth=50,
         init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50'),
     ),
-    head=dict(
+    neck=dict(
         type='HeatmapHead',
         in_channels=2048,
+        out_channels=17),
+    head=dict(
+        type='HeatmapHead',
+        in_channels=17,
         out_channels=17,
+        deconv_out_channels=None,
         loss=dict(type='KeypointMSELoss', use_target_weight=True),
         decoder=codec),
     test_cfg=dict(
@@ -75,14 +87,20 @@ train_pipeline = [
     dict(type='RandomBBoxTransform'),
     dict(type='TopdownAffine', input_size=codec['input_size']),
     dict(type='GenerateTarget', encoder=codec),
-    dict(type='PackPoseInputs')
-]
+    dict(type='PackPoseInputs',
+         meta_keys=('id', 'img_id', 'img_path', 'category_id', 'crowd_index', 'ori_shape', 'img_shape',
+                    'input_size', 'input_center', 'input_scale', 'flip', 'flip_direction', 'flip_indices',
+                    'raw_ann_info', 'dataset_name'),
+         pack_transformed=True)]
 val_pipeline = [
     dict(type='LoadImage'),
     dict(type='GetBBoxCenterScale'),
     dict(type='TopdownAffine', input_size=codec['input_size']),
-    dict(type='PackPoseInputs')
-]
+    dict(type='PackPoseInputs',
+         meta_keys=('id', 'img_id', 'img_path', 'category_id', 'crowd_index', 'ori_shape', 'img_shape',
+                    'input_size', 'input_center', 'input_scale', 'flip', 'flip_direction', 'flip_indices',
+                    'raw_ann_info', 'dataset_name'),
+         pack_transformed=True)]
 
 # data loaders
 train_dataloader = dict(
@@ -123,7 +141,7 @@ test_dataloader = dict(
         type=dataset_type,
         data_root=data_root,
         data_mode=data_mode,
-        ann_file='annotations/ap10k-test-split1.json',
+        ann_file='annotations/ap10k-val-split1.json',
         data_prefix=dict(img='data/'),
         test_mode=True,
         pipeline=val_pipeline,
@@ -135,4 +153,4 @@ val_evaluator = dict(
     ann_file=data_root + 'annotations/ap10k-val-split1.json')
 test_evaluator = dict(
     type='CocoMetric',
-    ann_file=data_root + 'annotations/ap10k-test-split1.json')
+    ann_file=data_root + 'annotations/ap10k-val-split1.json')
