@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from typing import Tuple
+from typing import Tuple, List
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
 from torch import Tensor
@@ -708,8 +708,10 @@ class Visualization(object):
                         attentions,
                         attentions_recon=None,
                         attentions_recon_rgb=None,
-                        feats_dino=None,
-                        feats_rgb=None,
+                        # feats_dino=None,
+                        # feats_rgb=None,
+                        # feats_student=None,
+                        feats: List = None,
                         masks=None,
                         horizontal=True,
                         nimgs=4):
@@ -747,10 +749,14 @@ class Visualization(object):
             rows.append(make_grid(self.draw_attentions(attentions_recon[:nimgs]), nCols=ncols))
         if attentions_recon_rgb is not None:
             rows.append(make_grid(self.draw_attentions(attentions_recon_rgb[:nimgs]), nCols=ncols))
-        if feats_dino is not None:
-            rows.append(make_grid(self.draw_features_pca(feats_dino[:nimgs]), nCols=ncols))
-        if feats_dino is not None:
-            rows.append(make_grid(self.draw_features_pca(feats_rgb[:nimgs]), nCols=ncols))
+        # if feats_dino is not None:
+        #     rows.append(make_grid(self.draw_features_pca(feats_dino[:nimgs]), nCols=ncols))
+        # if feats_dino is not None:
+        #     rows.append(make_grid(self.draw_features_pca(feats_rgb[:nimgs]), nCols=ncols))
+        # if feats_student is not None:
+        #     rows.append(make_grid(self.draw_features_pca(feats_student[:nimgs]), nCols=ncols))
+        for ft in feats:
+            rows.append(make_grid(self.draw_features_pca(ft[:nimgs]), nCols=ncols))
 
         if masks is not None:
             _masks = masks[:nimgs].byte()

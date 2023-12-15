@@ -1,12 +1,12 @@
 _base_ = ['../../../_base_/default_runtime.py']
 
 # runtime
-train_cfg = dict(max_epochs=510, val_interval=1)
+train_cfg = dict(max_epochs=610, val_interval=5)
 
 # optimizer
 optim_wrapper = dict(optimizer=dict(
     type='Adam',
-    lr=1e-4,
+    lr=4e-5,
 ))
 
 # learning policy
@@ -26,22 +26,15 @@ optim_wrapper = dict(optimizer=dict(
 # automatically scaling LR based on the actual training batch size
 auto_scale_lr = dict(base_batch_size=512)
 
-vis_interval = 40
-vis_wait_time = 5
-
 # hooks
 default_hooks = dict(
     logger=dict(type='LoggerHook', interval=40),
     checkpoint=dict(save_best='coco/AP', rule='greater'),
-    # visualization_train=dict(type='TrainVisualizationHook', enable=True, interval=vis_interval, wait_time=vis_wait_time),
-    # visualization_val=dict(type='TrainVisualizationHook', mode='val', enable=True, interval=vis_interval, wait_time=vis_wait_time),
-    # visualization_test=dict(type='TrainVisualizationHook', mode='test', enable=True, interval=vis_interval, wait_time=vis_wait_time),
     load_dino=dict(type='LoadDinoHook'),
 )
 
 # codec settings
-codec = dict(
-    type='MSRAHeatmap', input_size=(256, 256), heatmap_size=(64, 64), sigma=2)
+codec = dict(type='MSRAHeatmap', input_size=(256, 256), heatmap_size=(64, 64), sigma=2)
 
 
 embedding_dim = 32
@@ -59,8 +52,6 @@ model = dict(
         depth=50,
         in_channels=384,
         deep_stem=False,
-        # stem_channels=32,
-        # base_channels=32,
         num_stages=3,
         strides=(1, 2, 1),
         dilations=(1, 1, 1),
@@ -108,7 +99,7 @@ model = dict(
         flip_mode='heatmap',
         shift_heatmap=True,
     ),
-    # init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/td-hm_res50_8xb64-210e_ap10k-256x256/epoch_60.pth'),
+    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/dinopose_res50_ap10k-256x256/epoch_430.pth'),
 )
 
 # base dataset settings
@@ -123,7 +114,6 @@ train_pipeline = [
     dict(type='RandomFlip', direction='horizontal'),
     dict(type='RandomHalfBody'),
     dict(type='RandomBBoxTransform'),
-    # dict(type='LoadDino'),
     dict(type='TopdownAffine', input_size=codec['input_size']),
     dict(type='TopdownAffineDino', input_size=codec['input_size'], input_size_dino=codec['heatmap_size']),
     dict(type='GenerateTarget', encoder=codec),
@@ -150,7 +140,7 @@ val_pipeline = [
 train_dataloader = dict(
     batch_size=32,
     num_workers=4,
-    persistent_workers=False,
+    persistent_workers=True,
     sampler=dict(type='DefaultSampler', shuffle=True),
     dataset=dict(
         type=dataset_type,

@@ -76,6 +76,8 @@ class DinoPoseEstimator(BasePoseEstimator):
                  dino_encoder: ConfigType = None,
                  dino_neck: OptConfigType = None,
                  dino_decoder: ConfigType = None,
+                 student_backbone: ConfigType = None,
+                 student_neck: OptConfigType = None,
                  train_cfg: OptConfigType = None,
                  test_cfg: OptConfigType = None,
                  data_preprocessor: OptConfigType = None,
@@ -98,6 +100,9 @@ class DinoPoseEstimator(BasePoseEstimator):
 
         if dino_decoder is not None:
             self.dino_decoder = MODELS.build(dino_decoder)
+
+        self.student_backbone = MODELS.build(student_backbone)
+        self.student_neck = MODELS.build(student_neck)
 
         self.dino_hdf5 = None
         self.dino_features = {}
@@ -191,6 +196,21 @@ class DinoPoseEstimator(BasePoseEstimator):
         x = torch.nn.functional.normalize(x, dim=1)
         return (x, )
 
+    def extract_student(self, inputs: Tensor) -> Tuple[Tensor]:
+        """Extract features.
+
+        Args:
+            inputs (Tensor): Image tensor with shape (N, C, H ,W).
+
+        Returns:
+            tuple[Tensor]: Multi-level features that may have various
+            resolutions.
+        """
+        x = self.student_backbone(inputs)
+        x = self.student_neck(x)
+        x = torch.nn.functional.normalize(x, dim=1)
+        return (x, )
+
     def train_step(self, data: Union[dict, tuple, list],
                    optim_wrapper: OptimWrapper) -> Dict[str, torch.Tensor]:
         """Implements the default model training process including
@@ -268,6 +288,13 @@ class DinoPoseEstimator(BasePoseEstimator):
             pred_heatmaps = head.forward(feats)
         return pred_heatmaps
 
+    def merge_feats(self, feats1, feats2, train):
+        if not train and self.test_cfg.get('flip_test', False):
+            feats_merged = [(feats1[0][0] + feats2[0][0]) / 2.0, (feats1[1][0] + feats2[1][0]) / 2.0]
+        else:
+            feats_merged = [(feats1[0] + feats2[0]) / 2.0]
+        return feats_merged
+
     def forward(self, inputs: Tensor, data_samples: SampleList, train=False) -> tuple:
         """Calculate losses from a batch of inputs and data samples.
 
@@ -282,73 +309,118 @@ class DinoPoseEstimator(BasePoseEstimator):
         inputs_dino = self.get_dino_inputs(data_samples)
 
         masks_rgb = np.stack([s.mask for s in data_samples])
-        masks_dino = inputs_dino.sum(axis=1, keepdims=True) != 0
 
         masks = torch.tensor(masks_rgb, device='cuda').unsqueeze(1)
         masks = torch.nn.functional.interpolate(masks.float(), size=(64, 64)).bool()
-        masks = masks_dino & masks
+
+        if inputs_dino is not None:
+            masks_dino = inputs_dino.sum(axis=1, keepdims=True) != 0
+            masks = masks_dino & masks
+
         m_feats = masks.repeat(1, 32, 1, 1)
         m_recon = masks.repeat(1, 384, 1, 1)
 
         losses = dict()
 
-        if not train and self.test_cfg.get('flip_test', False):
-            _feats = self.extract_feat(inputs)
-            _feats_flip = self.extract_feat(inputs.flip(-1))
-            feats = [_feats, _feats_flip]
-        else:
-            feats = self.extract_feat(inputs)
-            # noise = torch.randn_like(feats[0]).cuda() * 0.005
-            # feats = (feats[0] + noise, )
-
-        inputs_rgb_recon = self.dino_decoder(feats[0])
-
-        # if inputs_dino is not None:
-        if not train and self.test_cfg.get('flip_test', False):
-            _feats_dino = self.extract_emb(inputs_rgb_recon)
-            _feats_dino_flip = self.extract_emb(inputs_rgb_recon.flip(-1))
-            feats_dino = [_feats_dino, _feats_dino_flip]
-            _feats, _feats_flip = feats
-            feats_merged = [(_feats[0] + _feats_dino[0]) / 2.0, (_feats_flip[0] + _feats_dino_flip[0]) / 2.0]
-            loss_dino = torch.nn.functional.mse_loss(_feats[0][m_feats], _feats_dino[0][m_feats]) * 200
-            losses.update(loss_dino=loss_dino)
-        else:
-            feats_dino = self.extract_emb(inputs_rgb_recon)
-            feats_merged = [(feats[0] + feats_dino[0]) / 2.0]
-            # feats_dino_detached = feats_dino[0][m_feats].detach()
-            # loss_dino = torch.nn.functional.mse_loss(feats[0][m_feats], feats_dino_detached) * 200
-            # losses.update(loss_dino=loss_dino)
-
-        # inputs_dino_recon = self.dino_decoder(feats_dino[0])
-        # loss_recon = torch.nn.functional.mse_loss(inputs_dino_recon[m_recon], inputs_dino[m_recon])
-
-        loss_recon = torch.nn.functional.mse_loss(inputs_rgb_recon[m_recon], inputs_dino[m_recon])
-        # loss_recon = (loss_recon + loss_recon_rgb) / 2.0
-        loss_recon = loss_recon * 0.1
-        losses.update(loss_recon=loss_recon)
-
-        pred_heatmaps = self.forward_head(self.head, feats_merged, data_samples, train)
-        pred_heatmaps_rgb = self.forward_head(self.head, feats, data_samples, train)
-        pred_heatmaps_dino = self.forward_head(self.head, feats_dino, data_samples, train)
-
         gt_heatmaps = torch.stack([d.gt_fields.heatmaps for d in data_samples])
         keypoint_weights = torch.cat([d.gt_instance_labels.keypoint_weights for d in data_samples])
 
-        # calculate losses
-        loss_kpt = self.head.loss_module(pred_heatmaps, gt_heatmaps, keypoint_weights) * 100.0
-        loss_kpt_rgb = self.head.loss_module(pred_heatmaps_rgb, gt_heatmaps, keypoint_weights) * 100.0
-        loss_kpt_dino = self.head.loss_module(pred_heatmaps_dino, gt_heatmaps, keypoint_weights) * 100.0
-        losses.update(loss_kpt=loss_kpt)
-        losses.update(l_kpt_rgb=loss_kpt_rgb)
-        losses.update(l_kpt_dino=loss_kpt_dino)
+        #
+        # train teacher network
+        #
+        predict_teacher = False
+        if predict_teacher:
+            self.backbone.eval()
+            self.neck.eval()
+            self.head.eval()
+            self.dino_encoder.eval()
+            self.dino_decoder.eval()
+            self.dino_neck.eval()
 
-        preds = self.head.decode(pred_heatmaps)
-        pred_fields = [PixelData(heatmaps=hm) for hm in pred_heatmaps.detach()]
+            with torch.set_grad_enabled(False):
+                if not train and self.test_cfg.get('flip_test', False):
+                    _feats = self.extract_feat(inputs)
+                    _feats_flip = self.extract_feat(inputs.flip(-1))
+                    feats = [_feats, _feats_flip]
+                else:
+                    feats = self.extract_feat(inputs)
+
+                # if inputs_dino is not None:
+                if not train and self.test_cfg.get('flip_test', False):
+                    _feats_dino = self.extract_emb(inputs_dino)
+                    _feats_dino_flip = self.extract_emb(inputs_dino.flip(-1))
+                    feats_dino = [_feats_dino, _feats_dino_flip]
+                    # loss_dino = torch.nn.functional.mse_loss(_feats[0][m_feats], _feats_dino[0][m_feats]) * 200
+                    # losses.update(loss_dino=loss_dino)
+                else:
+                    feats_dino = self.extract_emb(inputs_dino)
+                    # feats_dino_detached = feats_dino[0][m_feats].detach()
+                    # loss_dino = torch.nn.functional.mse_loss(feats[0][m_feats], feats_dino_detached) * 200
+                    # losses.update(loss_dino=loss_dino)
+
+                feats_merged = self.merge_feats(feats, feats_dino, train)
+                input_dino_recon = self.dino_decoder(feats_merged[0])
+                loss_recon = torch.nn.functional.mse_loss(input_dino_recon[m_recon], inputs_dino[m_recon])
+                loss_recon = loss_recon * 0.1
+                losses.update(l_recon=loss_recon)
+
+                pred_heatmaps = self.forward_head(self.head, feats_merged, data_samples, train)
+                # pred_heatmaps_rgb = self.forward_head(self.head, feats, data_samples, train)
+                pred_heatmaps_dino = self.forward_head(self.head, feats_dino, data_samples, train)
+
+                # calculate losses
+                loss_kpt = self.head.loss_module(pred_heatmaps, gt_heatmaps, keypoint_weights) * 100.0
+                # loss_kpt_rgb = self.head.loss_module(pred_heatmaps_rgb, gt_heatmaps, keypoint_weights) * 100.0
+                # loss_kpt_dino = self.head.loss_module(pred_heatmaps_dino, gt_heatmaps, keypoint_weights) * 100.0
+                losses.update(l_kpt=loss_kpt)
+                # losses.update(l_kpt_rgb=loss_kpt_rgb)
+                # losses.update(l_kpt_dino=loss_kpt_dino)
+
+        #
+        # train student network
+        #
+        distill = True
+        if not distill:
+            self.student_backbone.eval()
+            self.student_neck.eval()
+        with torch.set_grad_enabled(distill and train):
+            if not train and self.test_cfg.get('flip_test', False):
+                _feats = self.extract_student(inputs)
+                _feats_flip = self.extract_student(inputs.flip(-1))
+                feats_student = [_feats, _feats_flip]
+                input_dino_recon = self.dino_decoder(feats_student[0][0])
+            else:
+                feats_student = self.extract_student(inputs)
+                # dino reconstruction loss
+                input_dino_recon = self.dino_decoder(feats_student[0])
+
+        if distill:
+            loss_recon = torch.nn.functional.mse_loss(input_dino_recon[m_recon], inputs_dino[m_recon])
+            loss_recon = loss_recon * 0.1
+            losses.update(loss_recon=loss_recon)
+        else:
+            inputs_dino = input_dino_recon.detach()
+            if not train and self.test_cfg.get('flip_test', False):
+                _feats_dino = self.extract_emb(inputs_dino)
+                _feats_dino_flip = self.extract_emb(inputs_dino.flip(-1))
+                feats_dino = [_feats_dino, _feats_dino_flip]
+            else:
+                feats_dino = self.extract_emb(inputs_dino)
+            feats_student = feats_dino
+
+        pred_heatmaps_student = self.forward_head(self.head, feats_student, data_samples, train)
+        if not distill:
+            loss_kpt_student = self.head.loss_module(pred_heatmaps_student, gt_heatmaps, keypoint_weights) * 100.0
+            losses.update(loss_kpt_student=loss_kpt_student)
+
+        # save prediction
+        preds = self.head.decode(pred_heatmaps_student)
+        pred_fields = [PixelData(heatmaps=hm) for hm in pred_heatmaps_student.detach()]
 
         # calculate accuracy
         if self.train_cfg.get('compute_acc', True):
             _, avg_acc, _ = pose_pck_accuracy(
-                output=to_numpy(pred_heatmaps_rgb),
+                output=to_numpy(pred_heatmaps_student),
                 target=to_numpy(gt_heatmaps),
                 mask=to_numpy(keypoint_weights) > 0)
 
@@ -357,27 +429,50 @@ class DinoPoseEstimator(BasePoseEstimator):
 
         results = self.add_pred_to_datasample(preds, pred_fields, data_samples)
 
+        #
+        # Visualization of training progress
+        #
         interval = 40
         if self.batch_idx % interval == 0:
-            # attentions = np.array([s.dino.cpu().numpy() for s in data_batch['data_samples']])
             if not train and self.test_cfg.get('flip_test', False):
-                feats_dino = to_numpy(feats_dino[0][0])
-                feats_rgb = to_numpy(feats[0][0])
+                # feats_rgb = to_numpy(feats[0][0])
+                # feats_dino = to_numpy(feats_dino[0][0])
+                feats_student = to_numpy(feats_student[0][0])
+                # feats_merged = to_numpy(feats_merged[0])
             else:
-                feats_dino = to_numpy(feats_dino[0])
-                feats_rgb = to_numpy(feats[0])
-            self.vi.fit_pca(feats_dino[:4])
+                # feats_rgb = to_numpy(feats[0])
+                # feats_dino = to_numpy(feats_dino[0])
+                feats_student = to_numpy(feats_student[0])
+                # feats_merged = to_numpy(feats_merged[0])
+            self.vi.fit_pca(feats_student[:4])
             disp_dino = self.vi.visualize_batch(images=inputs,
                                                 attentions=to_numpy(inputs_dino),
-                                                # attentions_recon=to_numpy(inputs_dino_recon),
+                                                attentions_recon=to_numpy(input_dino_recon),
                                                 # attentions_recon_rgb=to_numpy(inputs_rgb_recon),
-                                                feats_dino=feats_dino,
-                                                feats_rgb=feats_rgb,
+                                                feats=[
+                                                    # feats_dino,
+                                                    # feats_rgb,
+                                                    # feats_merged,
+                                                    feats_student
+                                                ],
                                                 masks=masks)
             cv2.imshow("Batch", cv2.cvtColor(disp_dino, cv2.COLOR_RGB2BGR))
 
             disp_keypoints = create_keypoint_result_figure(inputs, data_samples)
             cv2.imshow("Predicted Keypoints", cv2.cvtColor(disp_keypoints, cv2.COLOR_RGB2BGR))
+
+            # preds = self.head.decode(pred_heatmaps_student)
+            # pred_fields = [PixelData(heatmaps=hm) for hm in pred_heatmaps_student.detach()]
+            # self.add_pred_to_datasample(preds, pred_fields, data_samples)
+            # disp_keypoints = create_keypoint_result_figure(inputs, data_samples)
+            # cv2.imshow("Predicted Keypoints Student", cv2.cvtColor(disp_keypoints, cv2.COLOR_RGB2BGR))
+            #
+            # preds = self.head.decode(pred_heatmaps_dino)
+            # pred_fields = [PixelData(heatmaps=hm) for hm in pred_heatmaps_dino.detach()]
+            # self.add_pred_to_datasample(preds, pred_fields, data_samples)
+            # disp_keypoints = create_keypoint_result_figure(inputs, data_samples)
+            # cv2.imshow("Predicted Keypoints Dino", cv2.cvtColor(disp_keypoints, cv2.COLOR_RGB2BGR))
+
             cv2.waitKey(int(5))
 
         self.batch_idx += 1
