@@ -511,6 +511,7 @@ class ResNet(BaseBackbone):
                  style='pytorch',
                  deep_stem=False,
                  avg_down=False,
+                 max_pool=True,
                  frozen_stages=-1,
                  conv_cfg=None,
                  norm_cfg=dict(type='BN', requires_grad=True),
@@ -551,6 +552,7 @@ class ResNet(BaseBackbone):
         self.block, stage_blocks = self.arch_settings[depth]
         self.stage_blocks = stage_blocks[:num_stages]
         self.expansion = get_expansion(self.block, expansion)
+        self.with_max_pool = max_pool
 
         self._make_stem_layer(in_channels, stem_channels)
 
@@ -643,10 +645,11 @@ class ResNet(BaseBackbone):
                 self.norm_cfg, stem_channels, postfix=1)
             self.add_module(self.norm1_name, norm1)
             self.relu = nn.ReLU(inplace=True)
-        # if in_channels == 3:
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        # else:
-        #     self.maxpool = nn.Identity
+
+        if self.with_max_pool:
+            self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        else:
+            self.maxpool = nn.Identity()
 
     def _freeze_stages(self):
         """Freeze parameters."""

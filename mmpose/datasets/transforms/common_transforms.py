@@ -27,6 +27,12 @@ except ImportError:
 
 Number = Union[int, float]
 
+from mmdet.datasets.transforms.colorspace import Brightness
+# 'Brightness'
+
+@TRANSFORMS.register_module()
+class Brightness(Brightness):
+    pass
 
 @TRANSFORMS.register_module()
 class GetBBoxCenterScale(BaseTransform):

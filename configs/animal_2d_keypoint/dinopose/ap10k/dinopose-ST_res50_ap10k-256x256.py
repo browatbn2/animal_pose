@@ -58,16 +58,16 @@ model = dict(
         out_indices=(2,),
         init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50'),
     ),
+    dino_neck=dict(
+        type='HeatmapHead',
+        in_channels=2*512,
+        out_channels=embedding_dim
+    ),
     dino_decoder=dict(
         type='HeatmapHead',
         in_channels=32,
         out_channels=384,
         deconv_out_channels=None,
-    ),
-    dino_neck=dict(
-        type='HeatmapHead',
-        in_channels=2*512,
-        out_channels=embedding_dim
     ),
     backbone=dict(
         type='ResNet',

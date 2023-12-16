@@ -1,12 +1,12 @@
 _base_ = ['../../../_base_/default_runtime.py']
 
 # runtime
-train_cfg = dict(max_epochs=610, val_interval=5)
+train_cfg = dict(max_epochs=610, val_interval=10)
 
 # optimizer
 optim_wrapper = dict(optimizer=dict(
     type='Adam',
-    lr=4e-5,
+    lr=1e-4,
 ))
 
 # learning policy
@@ -47,27 +47,46 @@ model = dict(
         mean=[123.675, 116.28, 103.53],
         std=[58.395, 57.12, 57.375],
         bgr_to_rgb=True),
+    # dino_encoder=dict(
+    #     type='ResNet',
+    #     depth=50,
+    #     in_channels=384,
+    #     deep_stem=False,
+    #     num_stages=1,
+    #     strides=(1,),
+    #     dilations=(1,),
+    #     out_indices=(0,),
+    #     max_pool=False,
+    #     init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50'),
+    # ),
+    # dino_neck=dict(
+    #     type='HeatmapHead',
+    #     # in_channels=2*512,
+    #     in_channels=256,
+    #     out_channels=embedding_dim,
+    #     deconv_out_channels=(256,),
+    #     deconv_kernel_sizes=(4,),
+    # ),
     dino_encoder=dict(
         type='ResNet',
         depth=50,
         in_channels=384,
-        deep_stem=False,
         num_stages=3,
         strides=(1, 2, 1),
         dilations=(1, 1, 1),
         out_indices=(2,),
         init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50'),
     ),
-    dino_decoder=dict(
-        type='HeatmapHead',
-        in_channels=32,
-        out_channels=384,
-        deconv_out_channels=None,
-    ),
     dino_neck=dict(
         type='HeatmapHead',
-        in_channels=2*512,
+        in_channels=1024,
         out_channels=embedding_dim
+    ),
+    dino_decoder=dict(
+        type='HeatmapHead',
+        in_channels=embedding_dim,
+        out_channels=384,
+        deconv_out_channels=None,
     ),
     backbone=dict(
         type='ResNet',
@@ -88,24 +107,61 @@ model = dict(
     student_backbone=dict(
         type='ResNet',
         depth=50,
+        num_stages=3,
+        strides=(1,2,1),
+        dilations=(1,1,1),
+        out_indices=(2,),
+        max_pool=True,
         init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50'),
     ),
     student_neck=dict(
         type='HeatmapHead',
-        in_channels=2048,
-        out_channels=embedding_dim),
+        in_channels=1024,
+        out_channels=embedding_dim,
+        deconv_out_channels=(256,),
+        deconv_kernel_sizes=(4,),
+    ),
     test_cfg=dict(
         flip_test=True,
         flip_mode='heatmap',
         shift_heatmap=True,
     ),
-    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/dinopose-ST_res50_ap10k-256x256/epoch_450.pth'),
+    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_res50_ap10k-256x256/epoch_15.pth'),
 )
 
 # base dataset settings
 dataset_type = 'AP10KDataset'
 data_mode = 'topdown'
 data_root = '/home/browatbn/dev/datasets/animal_data/ap-10k/'
+
+albu_train_transforms = [
+    dict(
+        type='ShiftScaleRotate',
+        shift_limit=0.0625,
+        scale_limit=0.0,
+        rotate_limit=0,
+        interpolation=1,
+        p=0.5)
+]
+
+pixel_augmentations = dict(
+    type='Albumentation',
+    transforms=[
+        dict(type='CoarseDropout',
+             min_width=8, min_height=8,
+             max_width=128, max_height=128,
+             min_holes=1,
+             max_holes=1,
+             p=1.00),
+        dict(type='RandomBrightnessContrast', brightness_limit=0.3, contrast_limit=0.3),
+        dict(type='HueSaturationValue', hue_shift_limit=20*2, sat_shift_limit=30*2, val_shift_limit=20*2),
+        dict(type='RGBShift'),
+        dict(type='RandomGamma'),
+        dict(type='Blur', blur_limit=11, p=0.1),
+        dict(type='MotionBlur', blur_limit=11, p=0.1),
+        dict(type='GaussNoise', p=0.1),
+        dict(type='CLAHE', p=0.1),
+    ])
 
 # pipelines
 train_pipeline = [
@@ -117,6 +173,7 @@ train_pipeline = [
     dict(type='TopdownAffine', input_size=codec['input_size']),
     dict(type='TopdownAffineDino', input_size=codec['input_size'], input_size_dino=codec['heatmap_size']),
     dict(type='GenerateTarget', encoder=codec),
+    # pixel_augmentations,
     dict(type='PackPoseInputs',
          meta_keys=('id', 'img_id', 'img_path', 'category_id', 'crowd_index', 'ori_shape', 'img_shape',
         'input_size', 'input_center', 'input_scale', 'flip', 'flip_direction', 'flip_indices',
