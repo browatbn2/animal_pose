@@ -82,7 +82,8 @@ class DinoPoseEstimator(BasePoseEstimator):
                  test_cfg: OptConfigType = None,
                  data_preprocessor: OptConfigType = None,
                  init_cfg: OptMultiConfig = None,
-                 metainfo: Optional[dict] = None):
+                 metainfo: Optional[dict] = None,
+                 distill=False):
         super().__init__(
             backbone=backbone,
             neck=neck,
@@ -109,6 +110,8 @@ class DinoPoseEstimator(BasePoseEstimator):
 
         self.batch_idx = 0
         self.vi = Visualization()
+
+        self.distill = distill
 
         if True:
             split = 'train-split1'
@@ -325,8 +328,7 @@ class DinoPoseEstimator(BasePoseEstimator):
         gt_heatmaps = torch.stack([d.gt_fields.heatmaps for d in data_samples])
         keypoint_weights = torch.cat([d.gt_instance_labels.keypoint_weights for d in data_samples])
 
-        distill = False
-        if not distill:
+        if not self.distill:
             self.student_backbone.eval()
             self.student_neck.eval()
 
@@ -344,7 +346,7 @@ class DinoPoseEstimator(BasePoseEstimator):
         #         input_dino_recon = self.dino_decoder(feats_dino[0])
 
         # embed RGB images
-        with torch.set_grad_enabled(distill and train):
+        with torch.set_grad_enabled(self.distill and train and True):
             if not train and self.test_cfg.get('flip_test', False):
                 _feats = self.extract_student(inputs)
                 _feats_flip = self.extract_student(inputs.flip(-1))
@@ -354,7 +356,7 @@ class DinoPoseEstimator(BasePoseEstimator):
                 feats_student = self.extract_student(inputs)
                 input_dino_recon_rgb = self.dino_decoder(feats_student[0])
 
-        if distill:
+        if self.distill:
             loss_recon_rgb = torch.nn.functional.mse_loss(input_dino_recon_rgb[m_recon], inputs_dino[m_recon]) * 0.1
             losses.update(loss_recon_rgb=loss_recon_rgb)
             # if not train and self.test_cfg.get('flip_test', False):
@@ -363,7 +365,11 @@ class DinoPoseEstimator(BasePoseEstimator):
             #     loss_emb = torch.nn.functional.mse_loss(feats_student[0][m_feats], feats_dino[0][m_feats].detach()) * 100  # DETACH
             # losses.update(loss_emb=loss_emb)
         else:
+            loss_recon_rgb = torch.nn.functional.mse_loss(input_dino_recon_rgb[m_recon], inputs_dino[m_recon]) * 0.1
+            losses.update(loss_recon_rgb=loss_recon_rgb)
+
             # inputs_dino = input_dino_recon_rgb.detach()
+            inputs_dino = input_dino_recon_rgb
             if not train and self.test_cfg.get('flip_test', False):
                 _feats_dino = self.extract_emb(inputs_dino)
                 _feats_dino_flip = self.extract_emb(inputs_dino.flip(-1))
@@ -372,7 +378,7 @@ class DinoPoseEstimator(BasePoseEstimator):
                 feats = self.extract_emb(inputs_dino)
 
         pred_heatmaps = self.forward_head(self.head, feats, data_samples, train)
-        if not distill:
+        if not self.distill:
             loss_kpt = self.head.loss_module(pred_heatmaps, gt_heatmaps, keypoint_weights) * 100.0
             losses.update(loss_kpt=loss_kpt)
 

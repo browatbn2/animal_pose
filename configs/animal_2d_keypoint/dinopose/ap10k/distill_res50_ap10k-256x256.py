@@ -1,7 +1,7 @@
 _base_ = ['../../../_base_/default_runtime.py']
 
 # runtime
-train_cfg = dict(max_epochs=610, val_interval=10)
+train_cfg = dict(max_epochs=610, val_interval=2)
 
 # optimizer
 optim_wrapper = dict(optimizer=dict(
@@ -26,22 +26,27 @@ optim_wrapper = dict(optimizer=dict(
 # automatically scaling LR based on the actual training batch size
 auto_scale_lr = dict(base_batch_size=512)
 
+distill = False
+
 # hooks
 default_hooks = dict(
     logger=dict(type='LoggerHook', interval=40),
     checkpoint=dict(save_best='coco/AP', rule='greater'),
-    load_dino=dict(type='LoadDinoHook'),
 )
+# if distill:
+default_hooks.update(dict(load_dino=dict(type='LoadDinoHook')))
+
 
 # codec settings
 codec = dict(type='MSRAHeatmap', input_size=(256, 256), heatmap_size=(64, 64), sigma=2)
 
-
 embedding_dim = 32
+
 
 # model settings
 model = dict(
     type='DinoPoseEstimator',
+    distill=distill,
     data_preprocessor=dict(
         type='PoseDataPreprocessor',
         mean=[123.675, 116.28, 103.53],
@@ -134,22 +139,12 @@ dataset_type = 'AP10KDataset'
 data_mode = 'topdown'
 data_root = '/home/browatbn/dev/datasets/animal_data/ap-10k/'
 
-albu_train_transforms = [
-    dict(
-        type='ShiftScaleRotate',
-        shift_limit=0.0625,
-        scale_limit=0.0,
-        rotate_limit=0,
-        interpolation=1,
-        p=0.5)
-]
-
 pixel_augmentations = dict(
     type='Albumentation',
     transforms=[
         dict(type='CoarseDropout',
              min_width=8, min_height=8,
-             max_width=128, max_height=128,
+             max_width=64, max_height=64,
              min_holes=1,
              max_holes=1,
              p=1.00),
@@ -173,13 +168,17 @@ train_pipeline = [
     dict(type='TopdownAffine', input_size=codec['input_size']),
     dict(type='TopdownAffineDino', input_size=codec['input_size'], input_size_dino=codec['heatmap_size']),
     dict(type='GenerateTarget', encoder=codec),
-    # pixel_augmentations,
+]
+if distill:
+    train_pipeline.append(pixel_augmentations)
+train_pipeline.append(
     dict(type='PackPoseInputs',
          meta_keys=('id', 'img_id', 'img_path', 'category_id', 'crowd_index', 'ori_shape', 'img_shape',
         'input_size', 'input_center', 'input_scale', 'flip', 'flip_direction', 'flip_indices',
         'raw_ann_info', 'dataset_name', 'dino_warp_mat', 'mask'),
          pack_transformed=True)
-]
+)
+
 val_pipeline = [
     dict(type='LoadImage'),
     dict(type='GetBBoxCenterScale'),
