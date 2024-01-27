@@ -312,25 +312,14 @@ class HRNet(BaseBackbone):
         self.norm1_name, norm1 = build_norm_layer(self.norm_cfg, 64, postfix=1)
         self.norm2_name, norm2 = build_norm_layer(self.norm_cfg, 64, postfix=2)
 
-        self.conv1 = build_conv_layer(
-            self.conv_cfg,
-            in_channels,
-            64,
-            kernel_size=3,
-            stride=2,
-            padding=1,
-            bias=False)
+        if in_channels == 3:
+            self.conv1 = build_conv_layer(self.conv_cfg, in_channels, 64, kernel_size=3, stride=2, padding=1, bias=False)
+            self.conv2 = build_conv_layer(self.conv_cfg, 64, 64, kernel_size=3, stride=2, padding=1, bias=False)
+        else:
+            self.conv1 = build_conv_layer(self.conv_cfg, in_channels, 64, kernel_size=3, stride=1, padding=1, bias=False)
+            self.conv2 = build_conv_layer(self.conv_cfg, 64, 64, kernel_size=3, stride=1, padding=1, bias=False)
 
         self.add_module(self.norm1_name, norm1)
-        self.conv2 = build_conv_layer(
-            self.conv_cfg,
-            64,
-            64,
-            kernel_size=3,
-            stride=2,
-            padding=1,
-            bias=False)
-
         self.add_module(self.norm2_name, norm2)
         self.relu = nn.ReLU(inplace=True)
 
@@ -566,6 +555,9 @@ class HRNet(BaseBackbone):
 
     def forward(self, x):
         """Forward function."""
+        if isinstance(x, tuple) or isinstance(x, list):
+            x = x[-1]
+
         x = self.conv1(x)
         x = self.norm1(x)
         x = self.relu(x)

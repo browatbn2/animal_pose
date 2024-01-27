@@ -90,7 +90,7 @@ model = dict(
 # base dataset settings
 dataset_type = 'AP10KDataset'
 data_mode = 'topdown'
-data_root = 'data/ap10k/'
+data_root = '/home/browatbn/dev/datasets/animal_data/ap-10k/'
 
 # pipelines
 train_pipeline = [
@@ -112,7 +112,7 @@ val_pipeline = [
 
 # data loaders
 train_dataloader = dict(
-    batch_size=64,
+    batch_size=32,
     num_workers=4,
     persistent_workers=True,
     sampler=dict(type='DefaultSampler', shuffle=True),
