@@ -43,6 +43,78 @@ def load_dino_hdf5(filepath: str) -> h5py.File:
 
 total_curr_iter = 0
 
+from mmengine.model import BaseModule, constant_init
+import torch.nn as nn
+
+
+class SelfAttention(nn.Module):
+    """ Self attention Layer"""
+
+    def __init__(self, in_dim, activation):
+        super(SelfAttention, self).__init__()
+        self.chanel = in_dim
+        self.activation = activation
+
+        self.query_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim // 8, kernel_size=1)
+        self.key_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim // 8, kernel_size=1)
+        self.value_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim, kernel_size=1)
+        # self.query_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim * 2, kernel_size=1)
+        # self.key_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim * 2, kernel_size=1)
+        # self.value_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim * 2, kernel_size=1)
+        self.gamma = nn.Parameter(torch.zeros(1))
+        # self.multihead_attn = nn.MultiheadAttention(embed_dim=in_dim * 2, num_heads=8, batch_first=True)
+
+        self.softmax = nn.Softmax(dim=-1)  #
+
+    def forward(self, x):
+        """
+            inputs :
+                x : input feature maps(B X C X W X H)
+            returns :
+                out : self attention value + input feature
+                attention: B X N X N (N is Width*Height)
+        """
+        m_batchsize, C, width, height = x.size()
+        proj_query = self.query_conv(x).view(m_batchsize, -1, width * height).permute(0, 2, 1)  # B X C X(N)
+        proj_key = self.key_conv(x).view(m_batchsize, -1, width * height)  # B X C x (*W*H)
+        proj_value = self.value_conv(x).view(m_batchsize, -1, width * height)  # B X C X N
+
+        # proj_key = proj_key.permute(0, 2, 1)
+        # proj_value = proj_value.permute(0, 2, 1)
+        # out, attention = self.multihead_attn(proj_query, proj_key, proj_value)
+        # out = out.permute(0, 2, 1)
+        # out = out.view(m_batchsize, -1, width, height)
+
+        energy = torch.bmm(proj_query, proj_key)  # transpose check
+        attention = self.softmax(energy)  # BX (N) X (N)
+        out = torch.bmm(proj_value, attention.permute(0, 2, 1))
+        out = out.view(m_batchsize, -1, width, height)
+        out = self.gamma * out + x
+
+        return out, attention
+
+
+from mmcv.cnn import build_conv_layer, build_upsample_layer
+
+@MODELS.register_module()
+class SelfAttentionNeck(BaseModule):
+    def __init__(self):
+
+        super().__init__()
+        # embed_dim = 64 * 64
+        self.conv1 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=2, padding=1)
+        self.self_attention = SelfAttention(in_dim=128, activation=nn.ReLU())
+        # out_cfg = dict(type='Conv2d', in_channels=128, out_channels=32, kernel_size=1, stride=1, padding=0)
+        out_cfg = dict(type='deconv', in_channels=128, out_channels=128, kernel_size=4, stride=2, padding=1, output_padding=0, bias=False)
+        self.out = build_conv_layer(out_cfg)
+
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x, attn = self.self_attention(x)
+        x = self.out(x)
+        return x
+
 
 @MODELS.register_module()
 class DinoPoseEstimator(BasePoseEstimator):
@@ -80,6 +152,7 @@ class DinoPoseEstimator(BasePoseEstimator):
                  student_neck: OptConfigType = None,
                  student_head: OptConfigType = None,
                  student_head_hr: OptConfigType = None,
+                 student_head_attn: OptConfigType = None,
                  student_decoder: OptConfigType = None,
                  train_cfg: OptConfigType = None,
                  test_cfg: OptConfigType = None,
@@ -107,8 +180,11 @@ class DinoPoseEstimator(BasePoseEstimator):
         # self.student_backbone = MODELS.build(student_backbone)
         self.student_neck = MODELS.build(student_neck)
         self.student_head = MODELS.build(student_head)
-        self.student_head_hr = MODELS.build(student_head_hr)
         self.student_decoder = MODELS.build(student_decoder)
+        if student_head_hr is not None:
+            self.student_head_hr = MODELS.build(student_head_hr)
+        if student_head_attn is not None:
+            self.student_head_attn = MODELS.build(student_head_attn)
 
         self.dino_hdf5 = None
         self.dino_features = {}
@@ -361,6 +437,16 @@ class DinoPoseEstimator(BasePoseEstimator):
         Returns:
             dict: A dictionary of losses.
         """
+
+        heatmap_size = 64
+
+        def count_parameters(m):
+            return sum(p.numel() for p in m.parameters() if p.requires_grad)
+
+        # print(count_parameters(self.backbone))
+        # print(count_parameters(self.student_head_attn))
+        # exit()
+
         inputs_dino = self.get_dino_inputs(data_samples)
 
         masks_rgb = np.stack([s.mask for s in data_samples])
@@ -425,9 +511,9 @@ class DinoPoseEstimator(BasePoseEstimator):
         results = None
 
         # predict backbone
-        with torch.set_grad_enabled(self.distill and train):
-            feats = self.forward_backbone(self.backbone, inputs, train)
-            ft_student = self.forward_neck(self.student_neck, feats, train)
+        # with torch.set_grad_enabled(self.distill and train):
+        feats = self.forward_backbone(self.backbone, inputs, train)
+        ft_student = self.forward_neck(self.student_neck, feats, train)
 
         if self.distill:
             ft_ = ft_student
@@ -438,29 +524,30 @@ class DinoPoseEstimator(BasePoseEstimator):
             losses.update(loss_recon_rgb=loss_recon_rgb)
         else:
             # detach features
-            if train:
-                feats = [feats[0].detach()]
-                ft_student = ft_student.detach()
+            # if train:
+            #     # feats = [feats[0].detach()]
+            #     ft_student = ft_student.detach()
 
             # predict keypoints from student branch
+            # ft_student = self.forward_neck(self.student_head_attn, ft_student, train)
             x = self.forward_neck(self.student_head_hr, ft_student, train)
             pred_heatmaps_student = self.forward_head(self.student_head, x, data_samples, train)
             loss_kpt_student = self.student_head.loss_module(pred_heatmaps_student, gt_heatmaps, keypoint_weights) * 100.0
             losses.update(loss_kpt_student=loss_kpt_student)
 
             # predict keypoint from head branch
-            pred_heatmaps_rgb = self.forward_head(
-                self.head,
-                self.forward_neck(self.neck, feats, train),
-                data_samples,
-                train
-            )
-            loss_kpt_rgb = self.head.loss_module(pred_heatmaps_rgb, gt_heatmaps, keypoint_weights) * 100.0
-            losses.update(loss_kpt_rgb=loss_kpt_rgb)
+            # pred_heatmaps_rgb = self.forward_head(
+            #     self.head,
+            #     self.forward_neck(self.neck, feats, train),
+            #     data_samples,
+            #     train
+            # )
+            # loss_kpt_rgb = self.head.loss_module(pred_heatmaps_rgb, gt_heatmaps, keypoint_weights) * 100.0
+            # losses.update(loss_kpt_rgb=loss_kpt_rgb)
 
             # pred_heatmaps = (pred_heatmaps_rgb + pred_heatmaps_student) / 2.0
-            pred_heatmaps = pred_heatmaps_rgb
-            # pred_heatmaps = pred_heatmaps_student
+            # pred_heatmaps = pred_heatmaps_rgb
+            pred_heatmaps = pred_heatmaps_student
 
             preds = self.head.decode(pred_heatmaps)
             pred_fields = [PixelData(heatmaps=hm) for hm in pred_heatmaps.detach()]
