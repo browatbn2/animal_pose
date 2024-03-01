@@ -10,6 +10,8 @@ from mmpose.registry import METRICS
 from ..functional import (keypoint_auc, keypoint_epe, keypoint_nme,
                           keypoint_pck_accuracy)
 
+from mmpose.evaluation.functional import pose_pck_accuracy
+
 
 @METRICS.register_module()
 class PCKAccuracy(BaseMetric):
@@ -85,7 +87,7 @@ class PCKAccuracy(BaseMetric):
                     f"{self.__class__.__name__}. Should be one of 'bbox', "
                     f"'head', 'torso', but got {item}.")
 
-    def process(self, data_batch: Sequence[dict],
+    def process_backup(self, data_batch: Sequence[dict],
                 data_samples: Sequence[dict]) -> None:
         """Process one batch of data samples and predictions.
 
@@ -119,10 +121,90 @@ class PCKAccuracy(BaseMetric):
 
             if 'bbox' in self.norm_item:
                 assert 'bboxes' in gt, 'The ground truth data info do not ' \
+                                       'have the expected normalized_item ``"bbox"``.'
+                # ground truth bboxes, [1, 4]
+                bbox_size_ = np.max(gt['bboxes'][0][2:] - gt['bboxes'][0][:2])
+                bbox_size = np.array([bbox_size_, bbox_size_]).reshape(-1, 2)
+                result['bbox_size'] = bbox_size
+
+            if 'head' in self.norm_item:
+                assert 'head_size' in gt, 'The ground truth data info do ' \
+                                          'not have the expected normalized_item ``"head_size"``.'
+                # ground truth bboxes
+                head_size_ = gt['head_size']
+                head_size = np.array([head_size_, head_size_]).reshape(-1, 2)
+                result['head_size'] = head_size
+
+            if 'torso' in self.norm_item:
+                # used in JhmdbDataset
+                torso_size_ = np.linalg.norm(gt_coords[0][4] - gt_coords[0][5])
+                if torso_size_ < 1:
+                    torso_size_ = np.linalg.norm(pred_coords[0][4] -
+                                                 pred_coords[0][5])
+                    warnings.warn('Ground truth torso size < 1. '
+                                  'Use torso size from predicted '
+                                  'keypoint results instead.')
+                torso_size = np.array([torso_size_,
+                                       torso_size_]).reshape(-1, 2)
+                result['torso_size'] = torso_size
+
+            self.results.append(result)
+
+    def process(self, data_batch: Sequence[dict],
+                data_samples: Sequence[dict]) -> None:
+        """Process one batch of data samples and predictions.
+
+        The processed
+        results should be stored in ``self.results``, which will be used to
+        compute the metrics when all batches have been processed.
+        Args:
+            data_batch (Sequence[dict]): A batch of data
+                from the dataloader.
+            data_samples (Sequence[dict]): A batch of outputs from
+                the model.
+        """
+        for data_sample in data_samples:
+            # predicted keypoints coordinates, [1, K, D]
+            pred_coords = data_sample['pred_instances']['keypoints']
+            # ground truth data_info
+            gt = data_sample['gt_instances']
+            # ground truth keypoints coordinates, [1, K, D]
+            gt_coords = gt['keypoints']
+            # ground truth keypoints_visible, [1, K, 1]
+            mask = gt['keypoints_visible'].astype(bool)
+            if mask.ndim == 3:
+                mask = mask[:, :, 0]
+            mask = mask.reshape(1, -1)
+
+            from mmpose.codecs.utils import get_heatmap_maximum, get_simcc_maximum
+
+            pred_heatmaps = data_sample['pred_fields']['heatmaps']
+            gt_heatmaps = data_sample['gt_fields']['heatmaps']
+
+            gt_coords_hm, _ = get_heatmap_maximum(gt_heatmaps.unsqueeze(0).cpu().numpy())
+            pred_coords_hm, _ = get_heatmap_maximum(pred_heatmaps.unsqueeze(0).cpu().numpy())
+
+            # pck = pose_pck_accuracy(
+            #     output=pred_heatmaps.cpu().numpy(),
+            #     target=gt_heatmaps.cpu().numpy(),
+            #     mask=mask
+            # )
+
+            result = {
+                # 'pred_coords': pred_coords,
+                # 'gt_coords': gt_coords,
+                'pred_coords': pred_coords_hm,
+                'gt_coords': gt_coords_hm,
+                'mask': mask,
+            }
+
+            if 'bbox' in self.norm_item:
+                assert 'bboxes' in gt, 'The ground truth data info do not ' \
                     'have the expected normalized_item ``"bbox"``.'
                 # ground truth bboxes, [1, 4]
                 bbox_size_ = np.max(gt['bboxes'][0][2:] - gt['bboxes'][0][:2])
                 bbox_size = np.array([bbox_size_, bbox_size_]).reshape(-1, 2)
+                bbox_size = np.array([64, 64]).reshape(-1, 2)
                 result['bbox_size'] = bbox_size
 
             if 'head' in self.norm_item:

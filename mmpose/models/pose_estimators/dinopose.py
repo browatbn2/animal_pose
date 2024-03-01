@@ -478,10 +478,12 @@ class DinoPoseEstimator(BasePoseEstimator):
         pred_heatmaps = None
         results = None
 
+        freeze_backbone = False
+
         # predict backbone
-        # with torch.set_grad_enabled(self.distill and train):
-        feats = self.forward_backbone(self.backbone, inputs, train)
-        ft_student = self.forward_neck(self.student_neck, feats, train)
+        with torch.set_grad_enabled((not freeze_backbone or self.distill) and train):
+            feats = self.forward_backbone(self.backbone, inputs, train)
+            ft_student = self.forward_neck(self.student_neck, feats, train)
 
         if self.distill:
             ft_ = ft_student
@@ -492,9 +494,9 @@ class DinoPoseEstimator(BasePoseEstimator):
             losses.update(loss_recon_rgb=loss_recon_rgb)
         else:
             # detach features
-            # if train:
+            if train and freeze_backbone:
                 # feats = [feats[0].detach()]
-                # ft_student = ft_student.detach()
+                ft_student = ft_student.detach()
 
             # predict keypoints from student branch
             # ft_student = self.forward_neck(self.student_head_attn, ft_student, train)
@@ -518,7 +520,7 @@ class DinoPoseEstimator(BasePoseEstimator):
             pred_heatmaps = pred_heatmaps_student
 
             preds = self.head.decode(pred_heatmaps)
-            pred_fields = [PixelData(heatmaps=hm) for hm in pred_heatmaps.detach()]
+            pred_fields = [PixelData(heatmaps=hm) for hm in pred_heatmaps.detach().cpu()]
 
             # calculate accuracy
             if self.train_cfg.get('compute_acc', True):
@@ -535,7 +537,7 @@ class DinoPoseEstimator(BasePoseEstimator):
         #
         # Visualization of training progress
         #
-        interval = 100
+        interval = 10
         # interval = 1
 
         if self.batch_idx % interval == 0:

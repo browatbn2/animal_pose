@@ -4,17 +4,10 @@ import random
 import torch.utils.data as td
 
 from scipy.io import loadmat
-# import argparse
-# import glob
-# import imageio
-# import cv2
 from os.path import isfile
-import numpy as np
-import torch
-import os
+import json
 
 from utils.osutils import *
-from utils.imutils import *
 from utils.transforms import *
 
 class Real_Animal_All(td.Dataset):
@@ -40,6 +33,8 @@ class Real_Animal_All(td.Dataset):
         self.valid_pts_set = []
         self.train_cat_ids = []
         self.valid_cat_ids = []
+        self.train_ids = []
+        self.valid_ids = []
         self.load_animal()
         # self.mean, self.std = self._compute_mean()
 
@@ -83,16 +78,22 @@ class Real_Animal_All(td.Dataset):
                         anno_list.append(landmark_18)
                     frame_num += 1
 
+            id_offset = 0
+            if animal == 'tiger':
+                id_offset = 100000
+
             for idx in range(train_idxs.shape[0]):
                 train_idx = train_idxs[idx]
                 self.train_img_set.append(img_list[train_idx])
                 self.train_pts_set.append(anno_list[train_idx])
                 self.train_cat_ids.append(animal_to_categ[animal])
+                self.train_ids.append(train_idx+id_offset)
             for idx in range(valid_idxs.shape[0]):
                 valid_idx = valid_idxs[idx]
                 self.valid_img_set.append(img_list[valid_idx])
                 self.valid_pts_set.append(anno_list[valid_idx])
                 self.valid_cat_ids.append(animal_to_categ[animal])
+                self.valid_ids.append(valid_idx + id_offset)
             print('Animal:{}, number of frames:{}, train: {}, valid: {}'.format(animal, frame_num,
                                                                          train_idxs.shape[0], valid_idxs.shape[0]))
         print('Total number of frames:{}, train: {}, valid {}'.format(len(img_list), len(self.train_img_set),
@@ -202,22 +203,32 @@ def get_bbox_from_pts(pts, height, width) -> list:
     x_vis = pts[:, 0][pts[:, 0] > 0]
     y_vis = pts[:, 1][pts[:, 1] > 0]
 
-    try:
-        # generate bounding box using keypoints
-        # height, width = img.size()[1], img.size()[2]
-        y_min = int(max(np.min(y_vis) - 15, 0.0))
-        y_max = int(min(np.max(y_vis) + 15, height))
-        x_min = int(max(np.min(x_vis) - 15, 0.0))
-        x_max = int(min(np.max(x_vis) + 15, width))
-    except ValueError:
-        print(img_path)
+    # generate bounding box using keypoints
+    # height, width = img.size()[1], img.size()[2]
+    y_min = int(max(np.min(y_vis) - 15, 0.0))
+    y_max = int(min(np.max(y_vis) + 15, height))
+    x_min = int(max(np.min(x_vis) - 15, 0.0))
+    x_max = int(min(np.max(x_vis) + 15, width))
 
-    return [x_min, y_min, x_max, y_max]
+    w = x_max - x_min
+    h = y_max - y_min
+    cx = x_min + w//2
+    cy = y_min + h//2
+    return [x_min, y_min, w, h]
+    # return [x_min, y_min, x_max, y_max]
 
 
-if __name__ == '__main__':
-    ds_root = '/home/browatbn/dev/datasets/animal_data'
-    ds = Real_Animal_All(animal='all',
+def select_random_images(images_per_categ, seed=0):
+    np.random.seed(seed)
+    ds = Real_Animal_All(animal='horse', image_path=ds_root, inp_res=256, out_res=64, scale_factor=0.25, rot_factor=30, sigma=1, train_on_all_cat=True, label_type='')
+    ids_horse = np.random.choice(ds.train_ids, size=images_per_categ).tolist()
+    ds = Real_Animal_All(animal='tiger', image_path=ds_root, inp_res=256, out_res=64, scale_factor=0.25, rot_factor=30, sigma=1, train_on_all_cat=True, label_type='')
+    ids_tiger = np.random.choice(ds.train_ids, size=images_per_categ).tolist()
+    return ids_horse + ids_tiger
+
+def create_json(outfile, split, animals, num=None):
+
+    ds = Real_Animal_All(animal=animals,
                          image_path=ds_root,
                          inp_res=256,
                          out_res=64,
@@ -229,6 +240,14 @@ if __name__ == '__main__':
                          train_on_all_cat=True,
                          label_type=''
                          )
+
+    if split == 'train':
+        img_ids, img_set, pts_set, cat_ids = ds.train_ids, ds.train_img_set, ds.train_pts_set, ds.train_cat_ids
+    elif split == 'valid':
+        img_ids, img_set, pts_set, cat_ids = ds.valid_ids, ds.valid_img_set, ds.valid_pts_set, ds.valid_cat_ids
+    else:
+        raise ValueError()
+
     ann = {
         'images': [],
         'annotations': [],
@@ -240,19 +259,8 @@ if __name__ == '__main__':
     category_info_tiger = {'supercategory': 'animal', 'id': 1, 'name': 'tiger', 'keypoints': [], 'skeleton': [[]],}
     ann['categories'] = [category_info_horse, category_info_tiger]
 
-    import json
-    annotation_file = '/home/browatbn/dev/datasets/animal_data/ap-10k/annotations/ap10k-val-split1.json'
-
-    # annotation_file = '/home/browatbn/dev/datasets/animal_data/animalpose_keypoint_new/keypoints.json'
-    with open(annotation_file, 'r') as f:
-        dataset = json.load(f)
-
-    image_root = os.path.join(ds_root, 'behaviorDiscovery2.0')
-
-    num = 100
-    for img_id, (image, pts, category_id) in enumerate(zip(ds.valid_img_set[:num],
-                                                           ds.valid_pts_set[:num],
-                                                           ds.valid_cat_ids[:num])):
+    for img_id, image, pts, category_id in zip(img_ids[:num], img_set[:num], pts_set[:num], cat_ids[:num]):
+        img_id = int(img_id)
         img_path = image[0]
 
         _img = cv2.imread(os.path.join(image_root, img_path))
@@ -270,30 +278,46 @@ if __name__ == '__main__':
             'id': img_id,
             'image_id': img_id,
             'bbox': bbox,
-            'keypoints': pts.tolist(),
+            'keypoints': pts.ravel().tolist(),
             'num_keypoints': real_animal_all.njoints,
             'category_id': category_id,
+            'area': bbox[2] * bbox[3]
         }
         ann['annotations'].append(annot)
 
-    outfile = os.path.join(image_root, 'valid.json')
     with open(outfile, 'w', encoding='utf-8') as f:
         json.dump(ann, f, ensure_ascii=False, indent=4)
 
 
-    exit()
+if __name__ == '__main__':
 
-    dl = td.DataLoader(ds, batch_size=5, shuffle=False, num_workers=0)
+    ds_root = '/home/browatbn/dev/datasets/animal_data'
+    image_root = os.path.join(ds_root, 'behaviorDiscovery2.0')
 
-    import matplotlib.pyplot as plt
-    for data in dl:
-        images, heatmaps, metadata = data
-        # plt.imshow(images[0, 0].numpy())
-        # plt.show()
-        # plt.imshow(heatmaps[0, 0].numpy())
-        # plt.show()
-        pts = metadata['pts']
-        print("foo")
+    # annotation_file = '/home/browatbn/dev/datasets/animal_data/ap-10k/annotations/ap10k-val-split1.json'
+    # with open(annotation_file, 'r') as f:
+    #     dataset = json.load(f)
+
+    image_list = select_random_images(images_per_categ=36)
+    print(image_list)
+
+    create_json(os.path.join(image_root, 'train.json'), animals='all', split='train', num=None)
+    # create_json(os.path.join(image_root, 'valid.json'), animals=['horse', 'tiger'], split='valid', num=500)
+
+    # create_json(os.path.join(image_root, 'train_tiger.json'), animals='tiger', split='train', num=None)
+    create_json(os.path.join(image_root, 'valid_horse.json'), animals='horse', split='valid', num=None)
+
+    # dl = td.DataLoader(ds, batch_size=5, shuffle=False, num_workers=0)
+    #
+    # import matplotlib.pyplot as plt
+    # for data in dl:
+    #     images, heatmaps, metadata = data
+    #     # plt.imshow(images[0, 0].numpy())
+    #     # plt.show()
+    #     # plt.imshow(heatmaps[0, 0].numpy())
+    #     # plt.show()
+    #     pts = metadata['pts']
+    #     print("foo")
 
 
 

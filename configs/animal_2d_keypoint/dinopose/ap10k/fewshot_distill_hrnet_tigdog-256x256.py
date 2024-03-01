@@ -1,7 +1,7 @@
 _base_ = ['../../../_base_/default_runtime.py']
 
 # runtime
-train_cfg = dict(max_epochs=200, val_interval=5)
+train_cfg = dict(max_epochs=200, val_interval=1)
 
 # optimizer
 optim_wrapper = dict(optimizer=dict(
@@ -29,12 +29,12 @@ auto_scale_lr = dict(base_batch_size=512)
 # hooks
 default_hooks = dict(
     logger=dict(type='LoggerHook', interval=40),
-    checkpoint=dict(save_best='coco/AP', rule='greater'),
+    # checkpoint=dict(save_best='coco/AP', rule='greater'),
+    checkpoint=dict(type='CheckpointHook', interval=1),
 )
 
 # codec settings
 codec = dict(type='MSRAHeatmap', input_size=(256, 256), heatmap_size=(64, 64), sigma=2)
-# codec = dict(type='MSRAHeatmap', input_size=(256, 256), heatmap_size=(128, 128), sigma=4)
 
 num_keypoints = 18
 embedding_dim = 128
@@ -167,6 +167,7 @@ model = dict(
         flip_mode='heatmap',
         shift_heatmap=True,
     ),
+    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/fewshot_distill_hrnet_ap10k-256x256/epoch_160.pth'),
 )
 
 # base dataset settings
@@ -198,14 +199,13 @@ train_pipeline = [
     dict(type='LoadImage'),
     dict(type='GetBBoxCenterScale'),
     dict(type='RandomFlip', direction='horizontal'),
-    dict(type='RandomHalfBody'),
+    # dict(type='RandomHalfBody'),
     dict(type='RandomBBoxTransform'),
     dict(type='TopdownAffine', input_size=codec['input_size']),
     dict(type='TopdownAffineDino', input_size=codec['input_size'], input_size_dino=codec['heatmap_size']),
     dict(type='GenerateTarget', encoder=codec),
 ]
 
-# if distill:
 train_pipeline.append(pixel_augmentations)
 
 train_pipeline.append(
@@ -229,6 +229,8 @@ val_pipeline = [
          pack_transformed=True)
 ]
 
+indices_36 = [4184, 4891, 7739, 11759, 7073, 9155, 10175, 5095, 1262, 3961, 3349, 11590, 4391, 1033, 9518, 10373, 9325, 3266, 8341, 7731, 11745, 3146, 2970, 11393, 3856, 12516, 1312, 1354, 1216, 4846, 11159, 4964, 4201, 7615, 10116, 1271,
+              105250, 100464, 106067, 109082, 107374, 102518, 115734, 102065, 104962, 104962, 104403, 115583, 109221, 109159, 102019, 111242, 116473, 111419, 103772, 107558, 114772, 111932, 111154, 112561, 110849, 110787, 104891, 116429, 110350, 107635, 101366, 110988, 115578, 105710, 105962, 103720]
 # data loaders
 train_dataloader = dict(
     batch_size=32,
@@ -236,13 +238,54 @@ train_dataloader = dict(
     persistent_workers=False,
     sampler=dict(type='DefaultSampler', shuffle=True),
     dataset=dict(
+        type='RepeatDataset',
+        times=100,
+        dataset=dict(
+            type=dataset_type,
+            data_root=data_root,
+            data_mode=data_mode,
+            ann_file='train.json',
+            data_prefix=dict(img='.'),
+            pipeline=train_pipeline,
+            indices=indices_36,
+        )
+    )
+)
+val_dataloader = dict(
+    batch_size=32,
+    num_workers=4,
+    persistent_workers=True,
+    drop_last=False,
+    sampler=dict(type='DefaultSampler', shuffle=False, round_up=False),
+    dataset=dict(
         type=dataset_type,
         data_root=data_root,
         data_mode=data_mode,
-        ann_file='valid.json',
+        ann_file='valid_horse.json',
         data_prefix=dict(img='.'),
-        pipeline=train_pipeline,
+        test_mode=True,
+        pipeline=val_pipeline,
     )
 )
-val_cfg = None
-test_cfg = None
+
+test_dataloader = dict(
+    batch_size=32,
+    num_workers=4,
+    persistent_workers=True,
+    drop_last=False,
+    sampler=dict(type='DefaultSampler', shuffle=False, round_up=False),
+    dataset=dict(
+        type=dataset_type,
+        data_root=data_root,
+        data_mode=data_mode,
+        ann_file='valid_horse.json',
+        data_prefix=dict(img='.'),
+        test_mode=True,
+        pipeline=val_pipeline,
+    )
+)
+
+# evaluators
+evaluator = dict(type='PCKAccuracy', thr=0.05)
+val_evaluator = evaluator
+test_evaluator = evaluator
