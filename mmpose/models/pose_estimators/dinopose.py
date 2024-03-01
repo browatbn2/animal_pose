@@ -457,9 +457,11 @@ class DinoPoseEstimator(BasePoseEstimator):
         if inputs_dino is not None:
             masks_dino = inputs_dino.sum(axis=1, keepdims=True) != 0
             masks = masks_dino & masks
+            m_recon = masks.repeat(1, inputs_dino.shape[1], 1, 1)
+        else:
+            m_recon = None
 
         m_feats = masks.repeat(1, 32, 1, 1)
-        m_recon = masks.repeat(1, 384, 1, 1)
 
         losses = dict()
 
@@ -469,40 +471,6 @@ class DinoPoseEstimator(BasePoseEstimator):
         # if not self.distill:
         #     self.student_backbone.eval()
         #     self.student_neck.eval()
-
-        # embed original dino features
-        # with torch.set_grad_enabled(distill and train and False):
-        #     self.dino_encoder.eval()
-        #     self.dino_neck.eval()
-        #     if not train and self.test_cfg.get('flip_test', False):
-        #         _feats_dino = self.extract_emb(inputs_dino)
-        #         _feats_dino_flip = self.extract_emb(inputs_dino.flip(-1))
-        #         feats_dino = [_feats_dino, _feats_dino_flip]
-        #         input_dino_recon = self.dino_decoder(feats_dino[0][0])
-        #     else:
-        #         feats_dino = self.extract_emb(inputs_dino)
-        #         input_dino_recon = self.dino_decoder(feats_dino[0])
-
-        # predict keypoints from RGB (without DINO)
-        # with torch.set_grad_enabled(train):
-        #     if not train and self.test_cfg.get('flip_test', False):
-        #         _feats = self.extract_feat(inputs)
-        #         _feats_flip = self.extract_feat(inputs.flip(-1))
-        #         feats = [_feats, _feats_flip]
-        #     else:
-        #         feats = self.extract_feat(inputs)
-        #
-        # # embed RGB images
-        # with torch.set_grad_enabled(self.distill and train):
-        #     if not train and self.test_cfg.get('flip_test', False):
-        #         _feats = self.extract_student(inputs)
-        #         _feats_flip = self.extract_student(inputs.flip(-1))
-        #         feats_student = [_feats, _feats_flip]
-        #         input_dino_recon_rgb = self.student_decoder(feats_student[0][0])
-        #     else:
-        #         feats_student = self.extract_student(inputs)
-        #         input_dino_recon_rgb = self.student_decoder(feats_student[0])
-        #         # feats_student = [feats_student[0].detach()]
 
         input_dino_recon_rgb = None
         pred_heatmaps_student = None
@@ -525,8 +493,8 @@ class DinoPoseEstimator(BasePoseEstimator):
         else:
             # detach features
             # if train:
-            #     # feats = [feats[0].detach()]
-            #     ft_student = ft_student.detach()
+                # feats = [feats[0].detach()]
+                # ft_student = ft_student.detach()
 
             # predict keypoints from student branch
             # ft_student = self.forward_neck(self.student_head_attn, ft_student, train)
@@ -567,7 +535,8 @@ class DinoPoseEstimator(BasePoseEstimator):
         #
         # Visualization of training progress
         #
-        interval = 40
+        interval = 100
+        # interval = 1
 
         if self.batch_idx % interval == 0:
             if input_dino_recon_rgb is not None:
@@ -615,7 +584,7 @@ class DinoPoseEstimator(BasePoseEstimator):
             # disp_keypoints = create_keypoint_result_figure(inputs, data_samples)
             # cv2.imshow("Predicted Keypoints Dino", cv2.cvtColor(disp_keypoints, cv2.COLOR_RGB2BGR))
 
-            cv2.waitKey(int(5))
+            cv2.waitKey(5)
 
         self.batch_idx += 1
         return losses, results

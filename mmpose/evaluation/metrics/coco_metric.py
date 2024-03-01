@@ -151,6 +151,7 @@ class CocoMetric(BaseMetric):
         self.outfile_prefix = outfile_prefix
         self.pred_converter = pred_converter
         self.gt_converter = gt_converter
+        self.catIds = None
 
     @property
     def dataset_meta(self) -> Optional[dict]:
@@ -178,6 +179,9 @@ class CocoMetric(BaseMetric):
                     f'CocoMetric for dataset '
                     f"{dataset_meta['dataset_name']} has successfully "
                     f'loaded the annotation file from {ann_file}', 'current')
+                self.catIds = message.get_info(
+                    f"{dataset_meta['dataset_name']}_catIds", None)
+
 
     def process(self, data_batch: Sequence[dict],
                 data_samples: Sequence[dict]) -> None:
@@ -563,6 +567,8 @@ class CocoMetric(BaseMetric):
         coco_eval = COCOeval(self.coco, coco_det, self.iou_type, sigmas,
                              self.use_area)
         coco_eval.params.useSegm = None
+        if self.catIds is not None:
+            coco_eval.params.catIds = self.catIds
         coco_eval.evaluate()
         coco_eval.accumulate()
         coco_eval.summarize()

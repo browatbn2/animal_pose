@@ -686,7 +686,7 @@ class Visualization(object):
         self.dinovis = PCAVis(segment=False)
         # self.dinovis.load("../data/dino/dino_train-split1_vits14_14.h5")
         # self.dinovis.load("/media/browatbn/data/dino/dino_train-split1_vits14_14.h5")
-        self.dinovis.load("/home/browatbn/dev/data/dino/dino_train-split1_vits14_14.h5")
+        # self.dinovis.load("/home/browatbn/dev/data/dino/dino_train-split1_vits14_14.h5")
         self.H = image_size[0]
         self.W = image_size[1]
 

@@ -77,7 +77,9 @@ class BaseCocoStyleDataset(BaseDataset):
                  test_mode: bool = False,
                  lazy_init: bool = False,
                  max_refetch: int = 1000,
-                 sample_interval: int = 1):
+                 sample_interval: int = 1,
+                 category=None,
+                 supercategory=None):
 
         if data_mode not in {'topdown', 'bottomup'}:
             raise ValueError(
@@ -100,6 +102,10 @@ class BaseCocoStyleDataset(BaseDataset):
         self.bbox_file = bbox_file
         self.sample_interval = sample_interval
 
+        self.category = category
+        self.supercategory = supercategory
+        self.catIds = None
+
         super().__init__(
             ann_file=ann_file,
             metainfo=metainfo,
@@ -117,8 +123,8 @@ class BaseCocoStyleDataset(BaseDataset):
             # save the ann_file into MessageHub for CocoMetric
             message = MessageHub.get_current_instance()
             dataset_name = self.metainfo['dataset_name']
-            message.update_info_dict(
-                {f'{dataset_name}_ann_file': self.ann_file})
+            message.update_info_dict({f'{dataset_name}_ann_file': self.ann_file})
+            message.update_info_dict({f'{dataset_name}_catIds': self.catIds})
 
     @classmethod
     def _load_metainfo(cls, metainfo: dict = None) -> dict:
@@ -225,6 +231,21 @@ class BaseCocoStyleDataset(BaseDataset):
         if 'categories' in self.coco.dataset:
             self._metainfo['CLASSES'] = self.coco.loadCats(
                 self.coco.getCatIds())
+
+        catids = []
+
+        if self.supercategory is not None:
+            catids = self.coco.getCatIds(supNms=self.supercategory)
+
+        if self.category is not None:
+            catids = self.coco.getCatIds(catNms=self.category)
+
+        if len(catids) > 0:
+            indices = []
+            for catid in catids:
+                indices.extend(self.coco.catToImgs[catid])
+            self._indices = list(set(indices))
+            self.catIds = catids
 
         instance_list = []
         image_list = []

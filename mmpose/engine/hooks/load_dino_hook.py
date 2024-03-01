@@ -18,8 +18,9 @@ DATA_BATCH = Optional[Union[dict, tuple, list]]
 
 def get_dinov2_filepath(split):
     out_dir = '/home/browatbn/dev/data/dino'
-    patch_size = 14
     arch = 'vits14'
+    # arch = 'vitl14'
+    patch_size = 14
     return os.path.join(out_dir, f'dino_{split}_{arch}_{patch_size}.h5')
 
 
