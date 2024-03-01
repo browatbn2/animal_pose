@@ -8,9 +8,10 @@ from .horse10_dataset import Horse10Dataset
 from .locust_dataset import LocustDataset
 from .macaque_dataset import MacaqueDataset
 from .zebra_dataset import ZebraDataset
+from .tigdog_dataset import TigDogDataset
 
 __all__ = [
     'AnimalPoseDataset', 'AP10KDataset', 'Horse10Dataset', 'MacaqueDataset',
     'FlyDataset', 'LocustDataset', 'ZebraDataset', 'ATRWDataset',
-    'AnimalKingdomDataset'
+    'AnimalKingdomDataset', 'TigDogDataset'
 ]
