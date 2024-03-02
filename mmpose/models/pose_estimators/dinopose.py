@@ -518,7 +518,8 @@ class DinoPoseEstimator(BasePoseEstimator):
         interval = 40
         # interval = 1
 
-        if self.batch_idx % interval == 0:
+        username = os.environ.get('USER')
+        if self.batch_idx % interval == 0 and username == 'browatbn':
             if dino_recon is not None:
                 # if not train and self.test_cfg.get('flip_test', False):
                     # feats_rgb = to_numpy(feats[0][0])
