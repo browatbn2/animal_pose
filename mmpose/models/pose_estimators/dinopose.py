@@ -515,7 +515,7 @@ class DinoPoseEstimator(BasePoseEstimator):
         #
         # Visualization of training progress
         #
-        interval = 10
+        interval = 40
         # interval = 1
 
         if self.batch_idx % interval == 0:
