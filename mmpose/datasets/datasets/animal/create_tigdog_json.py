@@ -269,6 +269,7 @@ def create_json(outfile, split, animals, num=None):
     category_info_tiger = {'supercategory': 'animal', 'id': 1, 'name': 'tiger', 'keypoints': [], 'skeleton': [[]],}
     ann['categories'] = [category_info_horse, category_info_tiger]
 
+    print(f"Number of samples: {len(img_ids)}")
     for img_id, image, pts, category_id in zip(img_ids[:num], img_set[:num], pts_set[:num], cat_ids[:num]):
         img_id = int(img_id)
         img_path = image[0]
@@ -308,16 +309,16 @@ if __name__ == '__main__':
     # with open(annotation_file, 'r') as f:
     #     dataset = json.load(f)
 
-    image_list = select_random_test_images(images_per_categ=32)
-    # image_list = select_random_train_images(images_per_categ=36)
-    print(image_list)
-    exit()
+    # image_list = select_random_test_images(images_per_categ=32)
+    # # image_list = select_random_train_images(images_per_categ=36)
+    # print(image_list)
+    # exit()
 
     create_json(os.path.join(image_root, 'train.json'), animals='all', split='train', num=None)
-    # create_json(os.path.join(image_root, 'valid.json'), animals=['horse', 'tiger'], split='valid', num=500)
+    # create_json(os.path.join(image_root, 'valid.json'), animals='all', split='valid', num=None)
 
     # create_json(os.path.join(image_root, 'train_tiger.json'), animals='tiger', split='train', num=None)
-    create_json(os.path.join(image_root, 'valid_horse.json'), animals='horse', split='valid', num=None)
+    # create_json(os.path.join(image_root, 'valid_horse.json'), animals='horse', split='valid', num=None)
 
     # dl = td.DataLoader(ds, batch_size=5, shuffle=False, num_workers=0)
     #

@@ -178,13 +178,11 @@ class DinoPoseEstimator(BasePoseEstimator):
             self.dino_decoder = MODELS.build(dino_decoder)
 
         # self.student_backbone = MODELS.build(student_backbone)
-        self.student_neck = MODELS.build(student_neck)
-        self.student_head = MODELS.build(student_head)
-        self.student_decoder = MODELS.build(student_decoder)
-        if student_head_hr is not None:
-            self.student_head_hr = MODELS.build(student_head_hr)
-        if student_head_attn is not None:
-            self.student_head_attn = MODELS.build(student_head_attn)
+        # self.student_neck = MODELS.build(student_neck)
+        # self.student_head = MODELS.build(student_head)
+        # self.student_decoder = MODELS.build(student_decoder)
+        # if student_head_hr is not None:
+        #     self.student_head_hr = MODELS.build(student_head_hr)
 
         self.dino_hdf5 = None
         self.dino_features = {}
@@ -194,12 +192,13 @@ class DinoPoseEstimator(BasePoseEstimator):
 
         self.distill = distill
 
-        if True:
-            split = 'train-split1'
-            dino_file = get_dinov2_filepath(split=split)
-            if dino_file is not None:
-                assert os.path.isfile(dino_file), f"Could not find DINO feature file {dino_file}"
-                self.dino_hdf5 = load_dino_hdf5(dino_file)
+        # if True:
+        #     split = 'train-split1'
+        #     dino_file = get_dinov2_filepath(split=split)
+        #     if dino_file is not None:
+        #         assert os.path.isfile(dino_file), f"Could not find DINO feature file {dino_file}"
+        #         self.dino_hdf5 = load_dino_hdf5(dino_file)
+
                 # t = time.time()
                 # print("loading dino....")
                 # for i, idx in enumerate(self.attentions):
@@ -468,13 +467,7 @@ class DinoPoseEstimator(BasePoseEstimator):
         gt_heatmaps = torch.stack([d.gt_fields.heatmaps for d in data_samples])
         keypoint_weights = torch.cat([d.gt_instance_labels.keypoint_weights for d in data_samples])
 
-        # if not self.distill:
-        #     self.student_backbone.eval()
-        #     self.student_neck.eval()
-
-        input_dino_recon_rgb = None
-        pred_heatmaps_student = None
-        pred_heatmaps_rgb = None
+        dino_recon = None
         pred_heatmaps = None
         results = None
 
@@ -483,41 +476,26 @@ class DinoPoseEstimator(BasePoseEstimator):
         # predict backbone
         with torch.set_grad_enabled((not freeze_backbone or self.distill) and train):
             feats = self.forward_backbone(self.backbone, inputs, train)
-            ft_student = self.forward_neck(self.student_neck, feats, train)
+            feats = self.forward_neck(self.neck, feats, train)
 
         if self.distill:
-            ft_ = ft_student
+            ft_ = feats
             if not train:
-                ft_ = ft_student[0]
-            input_dino_recon_rgb = self.student_decoder(ft_)
-            loss_recon_rgb = torch.nn.functional.mse_loss(input_dino_recon_rgb[m_recon], inputs_dino[m_recon]) * 0.1
-            losses.update(loss_recon_rgb=loss_recon_rgb)
+                ft_ = feats[0]
+            dino_recon = self.dino_decoder(ft_)
+            loss_recon_dino = torch.nn.functional.mse_loss(dino_recon[m_recon], inputs_dino[m_recon]) * 0.1
+            losses.update(loss_recon_dino=loss_recon_dino)
         else:
             # detach features
             if train and freeze_backbone:
-                # feats = [feats[0].detach()]
-                ft_student = ft_student.detach()
+                feats = feats.detach()
 
             # predict keypoints from student branch
-            # ft_student = self.forward_neck(self.student_head_attn, ft_student, train)
-            x = self.forward_neck(self.student_head_hr, ft_student, train)
-            pred_heatmaps_student = self.forward_head(self.student_head, x, data_samples, train)
-            loss_kpt_student = self.student_head.loss_module(pred_heatmaps_student, gt_heatmaps, keypoint_weights) * 100.0
+            # x = self.forward_neck(self.head, feats, train)
+            # pred_heatmaps = self.forward_head(self.student_head, x, data_samples, train)
+            pred_heatmaps = self.forward_head(self.head, feats, data_samples, train)
+            loss_kpt_student = self.student_head.loss_module(pred_heatmaps, gt_heatmaps, keypoint_weights) * 100.0
             losses.update(loss_kpt_student=loss_kpt_student)
-
-            # predict keypoint from head branch
-            # pred_heatmaps_rgb = self.forward_head(
-            #     self.head,
-            #     self.forward_neck(self.neck, feats, train),
-            #     data_samples,
-            #     train
-            # )
-            # loss_kpt_rgb = self.head.loss_module(pred_heatmaps_rgb, gt_heatmaps, keypoint_weights) * 100.0
-            # losses.update(loss_kpt_rgb=loss_kpt_rgb)
-
-            # pred_heatmaps = (pred_heatmaps_rgb + pred_heatmaps_student) / 2.0
-            # pred_heatmaps = pred_heatmaps_rgb
-            pred_heatmaps = pred_heatmaps_student
 
             preds = self.head.decode(pred_heatmaps)
             pred_fields = [PixelData(heatmaps=hm) for hm in pred_heatmaps.detach().cpu()]
@@ -541,7 +519,7 @@ class DinoPoseEstimator(BasePoseEstimator):
         # interval = 1
 
         if self.batch_idx % interval == 0:
-            if input_dino_recon_rgb is not None:
+            if dino_recon is not None:
                 # if not train and self.test_cfg.get('flip_test', False):
                     # feats_rgb = to_numpy(feats[0][0])
                     # feats_dino = to_numpy(feats_dino[0][0])
@@ -556,7 +534,7 @@ class DinoPoseEstimator(BasePoseEstimator):
                 disp_dino = self.vi.visualize_batch(images=inputs,
                                                     attentions=to_numpy(inputs_dino),
                                                     # attentions_recon=to_numpy(input_dino_recon),
-                                                    attentions_recon_rgb=to_numpy(input_dino_recon_rgb),
+                                                    attentions_recon_rgb=to_numpy(dino_recon),
                                                     feats=[
                                                         # feats_dino,
                                                         # feats_rgb,
@@ -566,19 +544,19 @@ class DinoPoseEstimator(BasePoseEstimator):
                                                     masks=masks)
                 cv2.imshow("Batch", cv2.cvtColor(disp_dino, cv2.COLOR_RGB2BGR))
 
-            if pred_heatmaps_rgb is not None:
-                preds = self.head.decode(pred_heatmaps_rgb)
-                pred_fields = [PixelData(heatmaps=hm) for hm in pred_heatmaps_rgb.detach()]
+            if pred_heatmaps is not None:
+                preds = self.head.decode(pred_heatmaps)
+                pred_fields = [PixelData(heatmaps=hm) for hm in pred_heatmaps.detach()]
                 self.add_pred_to_datasample(preds, pred_fields, data_samples)
                 disp_keypoints = create_keypoint_result_figure(inputs, data_samples)
                 cv2.imshow("Predicted Keypoints RGB", cv2.cvtColor(disp_keypoints, cv2.COLOR_RGB2BGR))
 
-            if pred_heatmaps_student is not None:
-                preds = self.head.decode(pred_heatmaps_student)
-                pred_fields = [PixelData(heatmaps=hm) for hm in pred_heatmaps_student.detach()]
-                self.add_pred_to_datasample(preds, pred_fields, data_samples)
-                disp_keypoints = create_keypoint_result_figure(inputs, data_samples)
-                cv2.imshow("Predicted Keypoints Student", cv2.cvtColor(disp_keypoints, cv2.COLOR_RGB2BGR))
+            # if pred_heatmaps_student is not None:
+            #     preds = self.head.decode(pred_heatmaps_student)
+            #     pred_fields = [PixelData(heatmaps=hm) for hm in pred_heatmaps_student.detach()]
+            #     self.add_pred_to_datasample(preds, pred_fields, data_samples)
+            #     disp_keypoints = create_keypoint_result_figure(inputs, data_samples)
+            #     cv2.imshow("Predicted Keypoints Student", cv2.cvtColor(disp_keypoints, cv2.COLOR_RGB2BGR))
 
             # preds = self.head.decode(pred_heatmaps_dino)
             # pred_fields = [PixelData(heatmaps=hm) for hm in pred_heatmaps_dino.detach()]
