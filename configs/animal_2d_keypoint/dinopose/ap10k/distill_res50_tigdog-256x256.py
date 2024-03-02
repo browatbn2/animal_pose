@@ -29,20 +29,20 @@ auto_scale_lr = dict(base_batch_size=512)
 # hooks
 default_hooks = dict(
     logger=dict(type='LoggerHook', interval=40),
-    checkpoint=dict(save_best='coco/AP', rule='greater'),
+    checkpoint=dict(type='CheckpointHook', interval=5),
 )
 
 default_hooks.update(dict(load_dino=dict(type='LoadDinoHook',
-                                         dataset='ap10k',
-                                         train_split='train-split1',
-                                         val_split='val-split1',
-                                         arch='vitl14')))
+                                         dataset='tigdog',
+                                         train_split='train',
+                                         val_split='valid',
+                                         arch='vitb14')))
 
 # codec settings
 codec = dict(type='MSRAHeatmap', input_size=(256, 256), heatmap_size=(64, 64), sigma=2)
 
 embedding_dim = 128
-dino_dim = 1024
+dino_dim = 768
 
 # model settings
 model = dict(
@@ -84,9 +84,11 @@ model = dict(
 )
 
 # base dataset settings
-dataset_type = 'AP10KDataset'
+import os
+username = os.environ.get('USER')
+dataset_type = 'TigDogDataset'
 data_mode = 'topdown'
-data_root = '/home/browatbn/dev/datasets/animal_data/ap-10k/'
+data_root = f"/home/{username}/dev/datasets/animal_data/behaviorDiscovery2.0/"
 
 pixel_augmentations = dict(
     type='Albumentation',
@@ -119,7 +121,6 @@ train_pipeline = [
     dict(type='GenerateTarget', encoder=codec),
 ]
 
-# if distill:
 train_pipeline.append(pixel_augmentations)
 
 train_pipeline.append(
@@ -153,8 +154,8 @@ train_dataloader = dict(
         type=dataset_type,
         data_root=data_root,
         data_mode=data_mode,
-        ann_file='annotations/ap10k-train-split1.json',
-        data_prefix=dict(img='data/'),
+        ann_file='train.json',
+        data_prefix=dict(img='.'),
         pipeline=train_pipeline,
     ))
 val_cfg = None
