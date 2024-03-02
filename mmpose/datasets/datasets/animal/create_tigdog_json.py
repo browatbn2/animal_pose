@@ -218,13 +218,23 @@ def get_bbox_from_pts(pts, height, width) -> list:
     # return [x_min, y_min, x_max, y_max]
 
 
-def select_random_images(images_per_categ, seed=0):
+def select_random_test_images(images_per_categ, seed=0):
+    np.random.seed(seed)
+    ds = Real_Animal_All(animal='horse', image_path=ds_root, inp_res=256, out_res=64, scale_factor=0.25, rot_factor=30, sigma=1, train_on_all_cat=True, label_type='')
+    ids_horse = np.random.choice(ds.valid_ids, size=images_per_categ).tolist()
+    # ds = Real_Animal_All(animal='tiger', image_path=ds_root, inp_res=256, out_res=64, scale_factor=0.25, rot_factor=30, sigma=1, train_on_all_cat=True, label_type='')
+    # ids_tiger = np.random.choice(ds.train_ids, size=images_per_categ).tolist()
+    return ids_horse
+
+
+def select_random_train_images(images_per_categ, seed=0):
     np.random.seed(seed)
     ds = Real_Animal_All(animal='horse', image_path=ds_root, inp_res=256, out_res=64, scale_factor=0.25, rot_factor=30, sigma=1, train_on_all_cat=True, label_type='')
     ids_horse = np.random.choice(ds.train_ids, size=images_per_categ).tolist()
     ds = Real_Animal_All(animal='tiger', image_path=ds_root, inp_res=256, out_res=64, scale_factor=0.25, rot_factor=30, sigma=1, train_on_all_cat=True, label_type='')
     ids_tiger = np.random.choice(ds.train_ids, size=images_per_categ).tolist()
     return ids_horse + ids_tiger
+
 
 def create_json(outfile, split, animals, num=None):
 
@@ -298,8 +308,10 @@ if __name__ == '__main__':
     # with open(annotation_file, 'r') as f:
     #     dataset = json.load(f)
 
-    image_list = select_random_images(images_per_categ=36)
+    image_list = select_random_test_images(images_per_categ=32)
+    # image_list = select_random_train_images(images_per_categ=36)
     print(image_list)
+    exit()
 
     create_json(os.path.join(image_root, 'train.json'), animals='all', split='train', num=None)
     # create_json(os.path.join(image_root, 'valid.json'), animals=['horse', 'tiger'], split='valid', num=500)

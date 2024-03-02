@@ -261,9 +261,18 @@ class PCKAccuracy(BaseMetric):
             logger.info(f'Evaluating {self.__class__.__name__} '
                         f'(normalized by ``"bbox_size"``)...')
 
-            _, pck, _ = keypoint_pck_accuracy(pred_coords, gt_coords, mask,
+            pck_p, pck, _ = keypoint_pck_accuracy(pred_coords, gt_coords, mask,
                                               self.thr, norm_size_bbox)
             metrics['PCK'] = pck
+            parts = {'Eye': [0, 1], 'Chin': [2], 'Hoof': [3, 4, 5, 6], 'Hip': [7], 'Knee': [8, 9, 10, 11],
+                     'Shoulder': [12, 13], 'Elbow': [14, 15, 16, 17]}
+
+            def mean_joint_pck(joint_ids):
+                return np.mean([pck_p[i] for i in joint_ids])
+
+            metrics.update({
+                part_name: mean_joint_pck(part_joints) for part_name, part_joints in parts.items()
+            })
 
         if 'head' in self.norm_item:
             norm_size_head = np.concatenate(
