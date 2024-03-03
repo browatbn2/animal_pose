@@ -1,7 +1,6 @@
 _base_ = ['../../../_base_/default_runtime.py']
 
-# default_scope = 'mmpose'
-# import mmpose.models.pose_estimators.dinopose
+randomness=dict(seed=0)
 
 # runtime
 train_cfg = dict(max_epochs=200, val_interval=1)
@@ -32,25 +31,20 @@ auto_scale_lr = dict(base_batch_size=512)
 # hooks
 default_hooks = dict(
     logger=dict(type='LoggerHook', interval=40),
-    checkpoint=dict(type='CheckpointHook', interval=2),
+    checkpoint=dict(type='CheckpointHook', interval=1),
 )
-
-default_hooks.update(dict(load_dino=dict(type='LoadDinoHook',
-                                         dataset='tigdog',
-                                         train_split='train',
-                                         val_split='valid',
-                                         arch='vitb14')))
 
 # codec settings
 codec = dict(type='MSRAHeatmap', input_size=(256, 256), heatmap_size=(64, 64), sigma=2)
 
+num_keypoints = 18
 embedding_dim = 128
 dino_dim = 768
 
 # model settings
 model = dict(
     type='mmpose.DinoPoseEstimator',
-    distill=True,
+    distill=False,
     data_preprocessor=dict(
         type='PoseDataPreprocessor',
         mean=[123.675, 116.28, 103.53],
@@ -65,11 +59,52 @@ model = dict(
         type='HeatmapHead',
         in_channels=2048,
         out_channels=embedding_dim),
+    # head_hr=dict(
+    #     type='HRNet',
+    #     in_channels=embedding_dim,
+    #     extra=dict(
+    #         stage1=dict(
+    #             num_modules=1,
+    #             num_branches=1,
+    #             block='BASIC',
+    #             num_blocks=(4,),
+    #             num_channels=(64,)),
+    #         stage2=dict(
+    #             num_modules=1,
+    #             num_branches=2,
+    #             block='BASIC',
+    #             num_blocks=(4, 4),
+    #             num_channels=(32, 64)),
+    #         stage3=dict(
+    #             num_modules=1,
+    #             num_branches=2,
+    #             block='BASIC',
+    #             num_blocks=(4, 4),
+    #             num_channels=(32, 64)),
+    #         stage4=dict(
+    #             num_modules=1,
+    #             num_branches=2,
+    #             block='BASIC',
+    #             num_blocks=(4, 4),
+    #             num_channels=(32, 64)),
+    #     ),
+    # ),
+    # head=dict(
+    #     type='HeatmapHead',
+    #     in_channels=32,
+    #     out_channels=num_keypoints,
+    #     deconv_out_channels=None,
+    #     loss=dict(type='KeypointMSELoss', use_target_weight=True),
+    #     decoder=codec),
     head=dict(
         type='HeatmapHead',
         in_channels=embedding_dim,
-        out_channels=18,
+        out_channels=num_keypoints,
         deconv_out_channels=None,
+        # deconv_out_channels=[64, 64],
+        # deconv_kernel_sizes=[4, 4],
+        conv_out_channels=[128, 64],
+        conv_kernel_sizes=[7, 7],
         loss=dict(type='KeypointMSELoss', use_target_weight=True),
         decoder=codec),
     dino_decoder=dict(
@@ -83,15 +118,13 @@ model = dict(
         flip_mode='heatmap',
         shift_heatmap=True,
     ),
-    # init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_res50_ap10k-256x256/epoch_15.pth'),
+    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_res50_tigdog-256x256/epoch_62.pth'),
 )
 
 # base dataset settings
-import os
-username = os.environ.get('USER')
 dataset_type = 'TigDogDataset'
 data_mode = 'topdown'
-data_root = f"/home/{username}/dev/datasets/animal_data/behaviorDiscovery2.0/"
+data_root = '/home/browatbn/dev/datasets/animal_data/behaviorDiscovery2.0/'
 
 pixel_augmentations = dict(
     type='Albumentation',
@@ -147,19 +180,67 @@ val_pipeline = [
          pack_transformed=True)
 ]
 
+indices_36 = [4184, 4891, 7739, 11759, 7073, 9155, 10175, 5095, 1262, 3961, 3349, 11590, 4391, 1033, 9518, 10373, 9325, 3266, 8341, 7731, 11745, 3146, 2970, 11393, 3856, 12516, 1312, 1354, 1216, 4846, 11159, 4964, 4201, 7615, 10116, 1271,
+              105250, 100464, 106067, 109082, 107374, 102518, 115734, 102065, 104962, 104962, 104403, 115583, 109221, 109159, 102019, 111242, 116473, 111419, 103772, 107558, 114772, 111932, 111154, 112561, 110849, 110787, 104891, 116429, 110350, 107635, 101366, 110988, 115578, 105710, 105962, 103720]
 # data loaders
 train_dataloader = dict(
-    batch_size=24,
+    batch_size=32,
+    num_workers=4,
+    persistent_workers=False,
+    sampler=dict(type='DefaultSampler', shuffle=True),
+    dataset=dict(
+        type='RepeatDataset',
+        times=50,
+        dataset=dict(
+            type=dataset_type,
+            data_root=data_root,
+            data_mode=data_mode,
+            ann_file='train.json',
+            data_prefix=dict(img='.'),
+            pipeline=train_pipeline,
+            indices=indices_36,
+        )
+    )
+)
+
+indices_test  = [5390, 3768, 12816, 6531, 5541, 5469, 13097, 10515, 5752, 13384, 1960, 5146, 6394, 11864, 5147, 10691, 1997, 5411, 11882, 3760, 96, 185, 12787, 5555, 13067, 3746, 5551, 81, 5483, 125, 5682, 5461]
+
+val_dataloader = dict(
+    batch_size=32,
     num_workers=4,
     persistent_workers=True,
-    sampler=dict(type='DefaultSampler', shuffle=True),
+    drop_last=False,
+    sampler=dict(type='DefaultSampler', shuffle=False, round_up=False),
     dataset=dict(
         type=dataset_type,
         data_root=data_root,
         data_mode=data_mode,
-        ann_file='train.json',
+        ann_file='valid_tiger.json',
         data_prefix=dict(img='.'),
-        pipeline=train_pipeline,
-    ))
-val_cfg = None
-test_cfg = None
+        test_mode=True,
+        pipeline=val_pipeline,
+    )
+)
+
+test_dataloader = dict(
+    batch_size=32,
+    num_workers=4,
+    # persistent_workers=True,
+    drop_last=False,
+    sampler=dict(type='DefaultSampler', shuffle=False, round_up=False),
+    dataset=dict(
+        type=dataset_type,
+        data_root=data_root,
+        data_mode=data_mode,
+        ann_file='valid_tiger.json',
+        data_prefix=dict(img='.'),
+        test_mode=True,
+        pipeline=val_pipeline,
+        # indices=indices_test
+    )
+)
+
+# evaluators
+evaluator = dict(type='PCKAccuracy', thr=0.05)
+val_evaluator = evaluator
+test_evaluator = evaluator

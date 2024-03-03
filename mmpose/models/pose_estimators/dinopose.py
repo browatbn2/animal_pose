@@ -145,6 +145,7 @@ class DinoPoseEstimator(BasePoseEstimator):
                  backbone: ConfigType,
                  neck: OptConfigType = None,
                  head: OptConfigType = None,
+                 head_hr: OptConfigType = None,
                  dino_encoder: ConfigType = None,
                  dino_neck: OptConfigType = None,
                  dino_decoder: ConfigType = None,
@@ -176,6 +177,8 @@ class DinoPoseEstimator(BasePoseEstimator):
             self.dino_neck = MODELS.build(dino_neck)
         if dino_decoder is not None:
             self.dino_decoder = MODELS.build(dino_decoder)
+        if head_hr is not None:
+            self.head_hr = MODELS.build(head_hr)
 
         # self.student_backbone = MODELS.build(student_backbone)
         # self.student_neck = MODELS.build(student_neck)
@@ -490,11 +493,14 @@ class DinoPoseEstimator(BasePoseEstimator):
             if train and freeze_backbone:
                 feats = feats.detach()
 
-            # predict keypoints from student branch
-            # x = self.forward_neck(self.head, feats, train)
-            # pred_heatmaps = self.forward_head(self.student_head, x, data_samples, train)
+            # predict keypoints with small HRNet
+            # x = self.forward_neck(self.head_hr, feats, train)
+            # pred_heatmaps = self.forward_head(self.head, x, data_samples, train)
+
+            # predict keypoints directly from dino features
             pred_heatmaps = self.forward_head(self.head, feats, data_samples, train)
-            loss_kpt_student = self.student_head.loss_module(pred_heatmaps, gt_heatmaps, keypoint_weights) * 100.0
+
+            loss_kpt_student = self.head.loss_module(pred_heatmaps, gt_heatmaps, keypoint_weights) * 100.0
             losses.update(loss_kpt_student=loss_kpt_student)
 
             preds = self.head.decode(pred_heatmaps)

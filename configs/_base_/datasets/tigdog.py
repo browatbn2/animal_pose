@@ -27,10 +27,10 @@ dataset_info = dict(
         12: dict(name='L_Shoulder', id=5, color=[51, 153, 255], type='upper', swap='R_Shoulder'),
         13: dict(name='R_Shoulder', id=8, color=[0, 255, 0], type='upper', swap='L_Shoulder'),
 
-        14: dict(name='L_F_Knee', id=14, color=[0, 255, 0], type='upper', swap='L_F_Knee'),
-        15: dict(name='R_F_Knee', id=15, color=[0, 255, 0], type='upper', swap='R_F_Knee'),
-        16: dict(name='L_B_Knee', id=16, color=[0, 255, 0], type='lower', swap='L_B_Knee'),
-        17: dict(name='R_B_Knee', id=17, color=[0, 255, 0], type='lower', swap='R_B_Knee'),
+        14: dict(name='L_F_Knee', id=14, color=[0, 255, 0], type='upper', swap='R_F_Knee'),
+        15: dict(name='R_F_Knee', id=15, color=[0, 255, 0], type='upper', swap='L_F_Knee'),
+        16: dict(name='L_B_Knee', id=16, color=[0, 255, 0], type='lower', swap='R_B_Knee'),
+        17: dict(name='R_B_Knee', id=17, color=[0, 255, 0], type='lower', swap='L_B_Knee'),
     },
     skeleton_info={
         0: dict(link=('L_Eye', 'R_Eye'), id=0, color=[0, 0, 255]),

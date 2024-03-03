@@ -314,11 +314,13 @@ if __name__ == '__main__':
     # print(image_list)
     # exit()
 
-    create_json(os.path.join(image_root, 'train.json'), animals='all', split='train', num=None)
+    # create_json(os.path.join(image_root, 'train.json'), animals='all', split='train', num=None)
     # create_json(os.path.join(image_root, 'valid.json'), animals='all', split='valid', num=None)
 
     # create_json(os.path.join(image_root, 'train_tiger.json'), animals='tiger', split='train', num=None)
+    create_json(os.path.join(image_root, 'train_horse.json'), animals='horse', split='train', num=None)
     # create_json(os.path.join(image_root, 'valid_horse.json'), animals='horse', split='valid', num=None)
+    # create_json(os.path.join(image_root, 'valid_tiger.json'), animals='tiger', split='valid', num=None)
 
     # dl = td.DataLoader(ds, batch_size=5, shuffle=False, num_workers=0)
     #
