@@ -6,7 +6,7 @@ train_cfg = dict(max_epochs=200, val_interval=5)
 # optimizer
 optim_wrapper = dict(optimizer=dict(
     type='Adam',
-    lr=1e-4,
+    lr=2e-5,
 ))
 
 # learning policy
@@ -19,7 +19,7 @@ optim_wrapper = dict(optimizer=dict(
 #         begin=0,
 #         end=210,
 #         milestones=[30, 60],
-#         gamma=0.2,
+#         gamma=0.1,
 #         by_epoch=True)
 # ]
 
@@ -36,9 +36,8 @@ default_hooks = dict(
 codec = dict(type='MSRAHeatmap', input_size=(256, 256), heatmap_size=(64, 64), sigma=2)
 
 embedding_dim = 128
-dino_channels = 1024
+dino_dim = 1024
 
-# model settings
 model = dict(
     type='DinoPoseEstimator',
     distill=False,
@@ -48,106 +47,33 @@ model = dict(
         std=[58.395, 57.12, 57.375],
         bgr_to_rgb=True),
     backbone=dict(
-        type='HRNet',
-        in_channels=3,
-        extra=dict(
-            stage1=dict(
-                num_modules=1,
-                num_branches=1,
-                block='BOTTLENECK',
-                num_blocks=(4,),
-                num_channels=(64,)),
-            stage2=dict(
-                num_modules=1,
-                num_branches=2,
-                block='BASIC',
-                num_blocks=(4, 4),
-                num_channels=(32, 64)),
-            stage3=dict(
-                num_modules=4,
-                num_branches=3,
-                block='BASIC',
-                num_blocks=(4, 4, 4),
-                num_channels=(32, 64, 128)),
-            stage4=dict(
-                num_modules=3,
-                num_branches=4,
-                block='BASIC',
-                num_blocks=(4, 4, 4, 4),
-                num_channels=(32, 64, 128, 256))),
-        init_cfg=dict(
-            type='Pretrained',
-            checkpoint='https://download.openmmlab.com/mmpose/pretrain_models/hrnet_w32-36af842e.pth'),
+        type='ResNet',
+        depth=50,
+        init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50'),
     ),
     neck=dict(
         type='HeatmapHead',
-        in_channels=32,
-        out_channels=embedding_dim,
-        deconv_out_channels=None,
-    ),
+        in_channels=2048,
+        out_channels=embedding_dim),
     head=dict(
         type='HeatmapHead',
         in_channels=embedding_dim,
         out_channels=17,
         deconv_out_channels=None,
-        # conv_out_channels=[128, 64],
-        # conv_kernel_sizes=[7, 7],
-        conv_out_channels=[64, 64],
-        conv_kernel_sizes=[7, 7],
         loss=dict(type='KeypointMSELoss', use_target_weight=True),
         decoder=codec),
     dino_decoder=dict(
         type='HeatmapHead',
         in_channels=embedding_dim,
-        out_channels=dino_channels,
+        out_channels=dino_dim,
         deconv_out_channels=None,
     ),
-    # head=dict(
-    #     type='HeatmapHead',
-    #     in_channels=32,
-    #     out_channels=17,
-    #     deconv_out_channels=None,
-    #     loss=dict(type='KeypointMSELoss', use_target_weight=True),
-    #     decoder=codec),
-    # head_hr=dict(
-    #     type='HRNet',
-    #     in_channels=embedding_dim,
-    #     extra=dict(
-    #         stage1=dict(
-    #             num_modules=1,
-    #             num_branches=1,
-    #             block='BASIC',
-    #             num_blocks=(4,),
-    #             num_channels=(64,)),
-    #         stage2=dict(
-    #             num_modules=1,
-    #             num_branches=2,
-    #             block='BASIC',
-    #             num_blocks=(4, 4),
-    #             num_channels=(32, 64)),
-    #         stage3=dict(
-    #             num_modules=1,
-    #             num_branches=3,
-    #             block='BASIC',
-    #             num_blocks=(4, 4, 4),
-    #             num_channels=(32, 64, 128)),
-    #         stage4=dict(
-    #             num_modules=1,
-    #             num_branches=3,
-    #             block='BASIC',
-    #             num_blocks=(4, 4, 4),
-    #             num_channels=(32, 64, 128)),
-    #     ),
-    #     init_cfg=dict(
-    #         type='Pretrained',
-    #         checkpoint='https://download.openmmlab.com/mmpose/pretrain_models/hrnet_w32-36af842e.pth'),
-    # ),
     test_cfg=dict(
         flip_test=True,
         flip_mode='heatmap',
         shift_heatmap=True,
     ),
-    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_hrnet_ap10k-256x256/epoch_200.pth'),
+    # init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_res50_ap10k-256x256/epoch_70.pth'),
 )
 
 # base dataset settings

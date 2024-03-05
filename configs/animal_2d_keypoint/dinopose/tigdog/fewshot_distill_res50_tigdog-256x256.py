@@ -101,8 +101,8 @@ model = dict(
         in_channels=embedding_dim,
         out_channels=num_keypoints,
         deconv_out_channels=None,
-        # deconv_out_channels=[64, 64],
-        # deconv_kernel_sizes=[4, 4],
+        # conv_out_channels=[64, 64, 64],
+        # conv_kernel_sizes=[7, 7, 7],
         conv_out_channels=[128, 64],
         conv_kernel_sizes=[7, 7],
         loss=dict(type='KeypointMSELoss', use_target_weight=True),
@@ -118,7 +118,7 @@ model = dict(
         flip_mode='heatmap',
         shift_heatmap=True,
     ),
-    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_res50_tigdog-256x256/epoch_62.pth'),
+    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_res50_tigdog-256x256/epoch_90.pth'),
 )
 
 # base dataset settings
@@ -205,6 +205,9 @@ train_dataloader = dict(
 
 indices_test  = [5390, 3768, 12816, 6531, 5541, 5469, 13097, 10515, 5752, 13384, 1960, 5146, 6394, 11864, 5147, 10691, 1997, 5411, 11882, 3760, 96, 185, 12787, 5555, 13067, 3746, 5551, 81, 5483, 125, 5682, 5461]
 
+# valid_file = 'valid_tiger.json'
+valid_file = 'valid_horse.json'
+
 val_dataloader = dict(
     batch_size=32,
     num_workers=4,
@@ -215,7 +218,7 @@ val_dataloader = dict(
         type=dataset_type,
         data_root=data_root,
         data_mode=data_mode,
-        ann_file='valid_tiger.json',
+        ann_file=valid_file,
         data_prefix=dict(img='.'),
         test_mode=True,
         pipeline=val_pipeline,
@@ -232,11 +235,10 @@ test_dataloader = dict(
         type=dataset_type,
         data_root=data_root,
         data_mode=data_mode,
-        ann_file='valid_tiger.json',
+        ann_file=valid_file,
         data_prefix=dict(img='.'),
         test_mode=True,
         pipeline=val_pipeline,
-        # indices=indices_test
     )
 )
 

@@ -9,7 +9,7 @@ train_cfg = dict(max_epochs=200, val_interval=1)
 # optimizer
 optim_wrapper = dict(optimizer=dict(
     type='Adam',
-    lr=1e-4,
+    lr=2e-5,
 ))
 
 # learning policy
@@ -32,7 +32,7 @@ auto_scale_lr = dict(base_batch_size=512)
 # hooks
 default_hooks = dict(
     logger=dict(type='LoggerHook', interval=40),
-    checkpoint=dict(type='CheckpointHook', interval=2),
+    checkpoint=dict(type='CheckpointHook', interval=5),
 )
 
 default_hooks.update(dict(load_dino=dict(type='LoadDinoHook',
@@ -117,7 +117,6 @@ train_pipeline = [
     dict(type='LoadImage'),
     dict(type='GetBBoxCenterScale'),
     dict(type='RandomFlip', direction='horizontal'),
-    dict(type='RandomHalfBody'),
     dict(type='RandomBBoxTransform'),
     dict(type='TopdownAffine', input_size=codec['input_size']),
     dict(type='TopdownAffineDino', input_size=codec['input_size'], input_size_dino=codec['heatmap_size']),

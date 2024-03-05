@@ -8,7 +8,7 @@ train_cfg = dict(max_epochs=200, val_interval=1)
 # optimizer
 optim_wrapper = dict(optimizer=dict(
     type='Adam',
-    lr=2e-5,
+    lr=1e-4,
 ))
 
 # learning policy
@@ -103,6 +103,8 @@ model = dict(
         deconv_out_channels=None,
         conv_out_channels=[128, 64],
         conv_kernel_sizes=[7, 7],
+        # conv_out_channels=[64, 64, 64],
+        # conv_kernel_sizes=[7, 7, 7],
         loss=dict(type='KeypointMSELoss', use_target_weight=True),
         decoder=codec),
     dino_decoder=dict(
@@ -116,7 +118,7 @@ model = dict(
         flip_mode='heatmap',
         shift_heatmap=True,
     ),
-    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_res50_tigdog-256x256/epoch_62.pth'),
+    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_res50_tigdog-256x256/epoch_90.pth'),
 )
 
 # base dataset settings
