@@ -6,7 +6,7 @@ train_cfg = dict(max_epochs=200, val_interval=5)
 # optimizer
 optim_wrapper = dict(optimizer=dict(
     type='Adam',
-    lr=1e-4,
+    lr=2e-5,
 ))
 
 # learning policy
@@ -29,6 +29,7 @@ auto_scale_lr = dict(base_batch_size=512)
 # hooks
 default_hooks = dict(
     logger=dict(type='LoggerHook', interval=40),
+    checkpoint=dict(type='CheckpointHook', interval=5),
 )
 
 default_hooks.update(dict(load_dino=dict(type='LoadDinoHook',
@@ -44,7 +45,7 @@ codec = dict(type='MSRAHeatmap', input_size=(256, 256), heatmap_size=(64, 64), s
 
 embedding_dim = 128
 # dino_channels = 384
-dino_channels = 1024
+dino_dim = 1024
 
 # model settings
 model = dict(
@@ -100,12 +101,17 @@ model = dict(
         deconv_out_channels=None,
         loss=dict(type='KeypointMSELoss', use_target_weight=True),
         decoder=codec),
+    dino_decoder=dict(
+        type='HeatmapHead',
+        in_channels=embedding_dim,
+        out_channels=dino_dim,
+        deconv_out_channels=None,
+    ),
     test_cfg=dict(
         flip_test=True,
         flip_mode='heatmap',
         shift_heatmap=True,
     ),
-    # init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_res50_ap10k-256x256/epoch_15.pth'),
 )
 
 # base dataset settings
@@ -172,7 +178,7 @@ indices_train = None
 
 # data loaders
 train_dataloader = dict(
-    batch_size=24,
+    batch_size=16,
     num_workers=4,
     persistent_workers=False,
     sampler=dict(type='DefaultSampler', shuffle=True),

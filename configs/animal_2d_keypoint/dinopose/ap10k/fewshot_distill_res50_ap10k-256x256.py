@@ -6,7 +6,7 @@ train_cfg = dict(max_epochs=600, val_interval=5)
 # optimizer
 optim_wrapper = dict(optimizer=dict(
     type='Adam',
-    lr=1e-5,
+    lr=1e-4,
 ))
 
 # learning policy
@@ -26,16 +26,13 @@ optim_wrapper = dict(optimizer=dict(
 # automatically scaling LR based on the actual training batch size
 auto_scale_lr = dict(base_batch_size=512)
 
-distill = False
-
 # hooks
 default_hooks = dict(
     logger=dict(type='LoggerHook', interval=40),
     checkpoint=dict(save_best='coco/AP', rule='greater'),
 )
 
-if distill:
-    default_hooks.update(dict(load_dino=dict(type='LoadDinoHook')))
+default_hooks.update(dict(load_dino=dict(type='LoadDinoHook')))
 
 # codec settings
 codec = dict(type='MSRAHeatmap', input_size=(256, 256), heatmap_size=(64, 64), sigma=2)
@@ -45,7 +42,7 @@ embedding_dim = 128
 # model settings
 model = dict(
     type='DinoPoseEstimator',
-    distill=distill,
+    distill=True,
     data_preprocessor=dict(
         type='PoseDataPreprocessor',
         mean=[123.675, 116.28, 103.53],

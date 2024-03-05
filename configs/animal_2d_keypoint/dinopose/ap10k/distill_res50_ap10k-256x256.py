@@ -29,7 +29,7 @@ auto_scale_lr = dict(base_batch_size=512)
 # hooks
 default_hooks = dict(
     logger=dict(type='LoggerHook', interval=40),
-    checkpoint=dict(save_best='coco/AP', rule='greater'),
+    checkpoint=dict(type='CheckpointHook', interval=5),
 )
 
 default_hooks.update(dict(load_dino=dict(type='LoadDinoHook',
