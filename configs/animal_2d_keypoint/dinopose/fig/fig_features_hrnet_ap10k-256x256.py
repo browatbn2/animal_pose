@@ -255,7 +255,7 @@ val_dataloader = dict(
         pipeline=val_pipeline,
     ))
 test_dataloader = dict(
-    batch_size=24,
+    batch_size=128,
     num_workers=0,
     persistent_workers=False,
     drop_last=False,

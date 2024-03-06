@@ -3,12 +3,12 @@ _base_ = ['../../../_base_/default_runtime.py']
 randomness=dict(seed=0)
 
 # runtime
-train_cfg = dict(max_epochs=210, val_interval=1)
+train_cfg = dict(max_epochs=210, val_interval=10)
 
 # optimizer
 optim_wrapper = dict(optimizer=dict(
     type='Adam',
-    lr=1e-5,
+    lr=2e-5,
 ))
 
 # learning policy
@@ -107,7 +107,7 @@ model = dict(
         flip_mode='heatmap',
         shift_heatmap=True,
     ),
-    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_hrnet_ap10k-256x256/epoch_200.pth'),
+    # init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_hrnet_ap10k-256x256/epoch_200.pth'),
 )
 
 

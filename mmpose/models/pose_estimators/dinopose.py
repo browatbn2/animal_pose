@@ -526,8 +526,10 @@ class DinoPoseEstimator(BasePoseEstimator):
 
         if create_figure:
             interval = 1
+            wait = 0
         else:
             interval = 40
+            wait = 5
 
         username = os.environ.get('USER')
         if self.batch_idx % interval == 0 and username == 'browatbn':
@@ -570,10 +572,10 @@ class DinoPoseEstimator(BasePoseEstimator):
                     disp_skeletons = create_skeleton_result_figure(inputs, data_samples, groundtruth=True)
                     cv2.imshow("Groudtruth Results", cv2.cvtColor(disp_skeletons, cv2.COLOR_RGB2BGR))
 
-                    disp_features = self.vi.visualize_batch(images=inputs, feats=[feats[0]], masks=masks)
+                    disp_features = self.vi.visualize_batch(images=inputs, feats=[feats[0]], datasamples=datasamples, nimgs=len(inputs), horizontal=False)
                     cv2.imshow("Feature Maps", cv2.cvtColor(disp_features, cv2.COLOR_RGB2BGR))
 
-            cv2.waitKey(0)
+            cv2.waitKey(wait)
 
         self.batch_idx += 1
         return losses, results

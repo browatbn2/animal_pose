@@ -748,7 +748,9 @@ class PCAVis():
 
 class Visualization(object):
     def __init__(self, image_size=(256, 256)):
-        self.pcavis = PCAVis(segment=False)
+        # self.pcavis = PCAVis(segment=True, bg_thresh=0.45)
+        # self.pcavis = PCAVis(segment=True, bg_thresh=0.25)  # resnet
+        self.pcavis = PCAVis(segment=True, bg_thresh=0.01)
         self.dinovis = PCAVis(segment=False)
         # self.dinovis.load("../data/dino/dino_train-split1_vits14_14.h5")
         # self.dinovis.load("/media/browatbn/data/dino/dino_train-split1_vits14_14.h5")
@@ -779,11 +781,12 @@ class Visualization(object):
                         # feats_student=None,
                         feats: List = None,
                         masks=None,
+                        datasamples=None,
                         horizontal=True,
                         nimgs=4):
 
         nimgs = min(nimgs, len(images))
-        ncols = 1 if horizontal else nimgs
+        ncols = 1 if horizontal else nimgs//4
 
         rows = []
 
