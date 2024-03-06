@@ -1,5 +1,7 @@
 _base_ = ['../../../_base_/default_runtime.py']
 
+randomness=dict(seed=0)
+
 # runtime
 train_cfg = dict(max_epochs=200, val_interval=5)
 

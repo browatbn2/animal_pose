@@ -22,7 +22,7 @@ from mmengine.structures import PixelData
 from mmpose.models.utils.tta import flip_heatmaps
 
 import cv2
-from mmpose.visualization.vis import create_keypoint_result_figure, Visualization
+from mmpose.visualization.vis import create_keypoint_result_figure, Visualization, create_skeleton_result_figure
 
 
 def get_dinov2_filepath(split):
@@ -521,8 +521,13 @@ class DinoPoseEstimator(BasePoseEstimator):
         #
         # Visualization of training progress
         #
-        interval = 40
-        # interval = 1
+
+        create_figure = True
+
+        if create_figure:
+            interval = 1
+        else:
+            interval = 40
 
         username = os.environ.get('USER')
         if self.batch_idx % interval == 0 and username == 'browatbn':
@@ -558,20 +563,17 @@ class DinoPoseEstimator(BasePoseEstimator):
                 disp_keypoints = create_keypoint_result_figure(inputs, data_samples)
                 cv2.imshow("Predicted Keypoints RGB", cv2.cvtColor(disp_keypoints, cv2.COLOR_RGB2BGR))
 
-            # if pred_heatmaps_student is not None:
-            #     preds = self.head.decode(pred_heatmaps_student)
-            #     pred_fields = [PixelData(heatmaps=hm) for hm in pred_heatmaps_student.detach()]
-            #     self.add_pred_to_datasample(preds, pred_fields, data_samples)
-            #     disp_keypoints = create_keypoint_result_figure(inputs, data_samples)
-            #     cv2.imshow("Predicted Keypoints Student", cv2.cvtColor(disp_keypoints, cv2.COLOR_RGB2BGR))
+                if create_figure:
+                    disp_skeletons = create_skeleton_result_figure(inputs, data_samples, groundtruth=False)
+                    cv2.imshow("Predicted Results", cv2.cvtColor(disp_skeletons, cv2.COLOR_RGB2BGR))
 
-            # preds = self.head.decode(pred_heatmaps_dino)
-            # pred_fields = [PixelData(heatmaps=hm) for hm in pred_heatmaps_dino.detach()]
-            # self.add_pred_to_datasample(preds, pred_fields, data_samples)
-            # disp_keypoints = create_keypoint_result_figure(inputs, data_samples)
-            # cv2.imshow("Predicted Keypoints Dino", cv2.cvtColor(disp_keypoints, cv2.COLOR_RGB2BGR))
+                    disp_skeletons = create_skeleton_result_figure(inputs, data_samples, groundtruth=True)
+                    cv2.imshow("Groudtruth Results", cv2.cvtColor(disp_skeletons, cv2.COLOR_RGB2BGR))
 
-            cv2.waitKey(5)
+                    disp_features = self.vi.visualize_batch(images=inputs, feats=[feats[0]], masks=masks)
+                    cv2.imshow("Feature Maps", cv2.cvtColor(disp_features, cv2.COLOR_RGB2BGR))
+
+            cv2.waitKey(0)
 
         self.batch_idx += 1
         return losses, results

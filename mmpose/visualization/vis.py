@@ -269,6 +269,27 @@ def add_error_to_images(images, errors, loc='bl', size=0.65, vmin=0., vmax=30.0,
     return new_images
 
 
+def add_skeletons_to_images(images, keypoints, keypoints_visible, skeleton_links, skeleton_link_colors, kpt_thr=0.5, line_width=2):
+    new_images = to_disp_images(images)
+
+    links = skeleton_links
+    link_colors = skeleton_link_colors
+
+    for i, (img, kpts, score) in enumerate(zip(new_images, keypoints, keypoints_visible)):
+        for sk_id, sk in enumerate(links):
+            if score[sk[0]] < kpt_thr or score[sk[1]] < kpt_thr:
+                # skip the link that should not be drawn
+                continue
+
+            pos1 = (int(kpts[sk[0], 0]), int(kpts[sk[0], 1]))
+            pos2 = (int(kpts[sk[1], 0]), int(kpts[sk[1], 1]))
+
+            color = link_colors[sk_id][::-1].tolist()
+            cv2.line(img, pos1, pos2, color, thickness=line_width, lineType=cv2.LINE_AA)
+
+    return new_images
+
+
 # FIXME: clean up this mess!
 def add_landmarks_to_images(images, landmarks, color=None, radius=2, gt_landmarks=None, keypoints_visible=None,
                             lm_errs=None, lm_confs=None, lm_rec_errs=None,
@@ -415,10 +436,11 @@ def visualize_batch_pose(
         show_heatmaps=True,
         gt_color=(0, 255, 0),
         pred_color=(0, 0, 255),
-        draw_skeleton=True,
+        draw_skeleton=False,
         skeleton_links=None,
         skeleton_link_colors=None,
-        nimgs=5
+        nimgs=5,
+        ncols=None
 ):
     assert show_images or show_heatmaps, "Parameters 'show_images' and 'show_heatmaps' cannot both be False!"
 
@@ -465,9 +487,10 @@ def visualize_batch_pose(
         keypoints_gt *= f
         disp_images = add_landmarks_to_images(disp_images, keypoints_gt, keypoints_visible=keypoints_visible,
                                                   color=gt_color)
-        # disp_images = add_skeletons_to_images(disp_images, keypoints_gt, keypoints_visible=keypoints_visible,
-        #                                           skeleton_links=skeleton_links,
-        #                                           skeleton_link_colors=skeleton_link_colors)
+        if draw_skeleton:
+            disp_images = add_skeletons_to_images(disp_images, keypoints_gt, keypoints_visible=keypoints_visible,
+                                                  skeleton_links=skeleton_links,
+                                                  skeleton_link_colors=skeleton_link_colors)
     if keypoints_pred is not None:
         keypoints_pred = keypoints_pred[:nimgs] * f
         disp_images = add_landmarks_to_images(disp_images, keypoints_pred, keypoints_visible=keypoints_visible,
@@ -492,7 +515,41 @@ def visualize_batch_pose(
         # lm_errs = calc_landmark_nme_per_img(keypoints_gt, keypoints_pred, None, keypoints_visible)
         # disp_images = vis.add_error_to_images(disp_images, lm_errs, loc='br', format_string='{:>5.2f}', vmax=15)
 
-    return make_grid(disp_images, nCols=len(disp_images))
+    if ncols is None:
+        ncols = len(disp_images)
+    return make_grid(disp_images, nCols=ncols)
+
+
+def create_skeleton_result_figure(inputs: Tensor, data_samples: SampleList, groundtruth=False):
+    keypoints_gt = np.concatenate([s.gt_instances[0].transformed_keypoints for s in data_samples])
+    keypoints_visible = np.concatenate([s.gt_instances[0].keypoints_visible for s in data_samples])
+    heatmaps_pred = np.stack([to_numpy(s.pred_fields.heatmaps) for s in data_samples])
+    pred, _ = get_heatmap_maximum(to_numpy(heatmaps_pred))
+    pred, _ = get_heatmap_maximum(to_numpy(heatmaps_pred))
+    rows = []
+
+    skeleton_links = data_samples[0].skeleton_links
+    skeleton_link_colors = data_samples[0].skeleton_link_colors
+
+    if groundtruth:
+        keypoints = keypoints_gt
+    else:
+        keypoints = pred * 4
+    rows.append(
+        visualize_batch_pose(
+            inputs,
+            keypoints_gt=keypoints,
+            keypoints_visible=keypoints_visible,
+            show_heatmaps=False,
+            draw_skeleton=True,
+            skeleton_links=skeleton_links,
+            skeleton_link_colors=skeleton_link_colors,
+            nimgs=24,
+            ncols=8
+        ),
+    )
+
+    return make_grid(rows, nCols=1)
 
 
 def create_keypoint_result_figure(inputs: Tensor, data_samples: SampleList):
@@ -509,6 +566,15 @@ def create_keypoint_result_figure(inputs: Tensor, data_samples: SampleList):
                                      keypoints_gt=keypoints_gt,
                                      keypoints_visible=keypoints_visible,
                                      show_heatmaps=False))
+
+    # rows.append(visualize_batch_pose(inputs,
+    #                                  keypoints_gt=pred * 4,
+    #                                  keypoints_visible=keypoints_visible,
+    #                                  show_heatmaps=False,
+    #                                  draw_skeleton=True,
+    #                                  skeleton_links=skeleton_links,
+    #                                  skeleton_link_colors=skeleton_link_colors,
+    #                                  ))
     # rows.append(visualize_batch_pose(b1.images,
     #                                  keypoints_gt=b1.keypoints_pred,
     #                                  keypoints_visible=b1.keypoints_visible,
@@ -705,7 +771,7 @@ class Visualization(object):
 
     def visualize_batch(self,
                         images,
-                        attentions,
+                        attentions=None,
                         attentions_recon=None,
                         attentions_recon_rgb=None,
                         # feats_dino=None,
