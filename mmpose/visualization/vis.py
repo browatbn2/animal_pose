@@ -442,7 +442,7 @@ def visualize_batch_pose(
         nimgs=5,
         ncols=None
 ):
-    assert show_images or show_heatmaps, "Parameters 'show_images' and 'show_heatmaps' cannot both be False!"
+    # assert show_images or show_heatmaps, "Parameters 'show_images' and 'show_heatmaps' cannot both be False!"
 
     B, C, H, W = images.shape
     assert H in [128, 256]
@@ -458,8 +458,10 @@ def visualize_batch_pose(
     # if landmarks_to_draw is None:
     #     landmarks_to_draw = range(num_landmarks)
 
+    # images *= 0
     disp_images = to_disp_images(images[:nimgs], denorm=True)
     # disp_images = [cv2.cvtColor(im, cv2.COLOR_RGB2BGR) for im in disp_images]
+    # if show_images == False:
 
     # show heatmaps
     if heatmaps is not None and show_heatmaps:
@@ -483,14 +485,14 @@ def visualize_batch_pose(
     #
     # Annotate with predicted and GT keypoints
     #
-    if keypoints_gt is not None:
-        keypoints_gt *= f
-        disp_images = add_landmarks_to_images(disp_images, keypoints_gt, keypoints_visible=keypoints_visible,
-                                                  color=gt_color)
-        if draw_skeleton:
-            disp_images = add_skeletons_to_images(disp_images, keypoints_gt, keypoints_visible=keypoints_visible,
-                                                  skeleton_links=skeleton_links,
-                                                  skeleton_link_colors=skeleton_link_colors)
+    # if keypoints_gt is not None:
+    #     keypoints_gt *= f
+    #     disp_images = add_landmarks_to_images(disp_images, keypoints_gt, keypoints_visible=keypoints_visible,
+    #                                               color=gt_color)
+        # if draw_skeleton:
+        #     disp_images = add_skeletons_to_images(disp_images, keypoints_gt, keypoints_visible=keypoints_visible,
+        #                                           skeleton_links=skeleton_links,
+        #                                           skeleton_link_colors=skeleton_link_colors)
     if keypoints_pred is not None:
         keypoints_pred = keypoints_pred[:nimgs] * f
         disp_images = add_landmarks_to_images(disp_images, keypoints_pred, keypoints_visible=keypoints_visible,
@@ -514,6 +516,21 @@ def visualize_batch_pose(
 
         # lm_errs = calc_landmark_nme_per_img(keypoints_gt, keypoints_pred, None, keypoints_visible)
         # disp_images = vis.add_error_to_images(disp_images, lm_errs, loc='br', format_string='{:>5.2f}', vmax=15)
+
+    def convert_to_rgba(src):
+        tmp = cv2.cvtColor(src, cv2.COLOR_BGR2GRAY)
+        _, alpha = cv2.threshold(tmp, 0, 255, cv2.THRESH_BINARY)
+        b, g, r = cv2.split(src)
+        rgba = [b, g, r, alpha]
+        dst = cv2.merge(rgba, 4)
+        return dst
+
+    # test_img = convert_to_rgba(disp_images[0])
+    # cv2.imwrite("test.png", test_img)
+    # cv2.imshow("test alpha", test_img)
+    # cv2.waitKey()
+
+    # disp_images = [cv2.cvtColor(im, cv2.COLOR_BGR2BGRA) for im in disp_images]
 
     if ncols is None:
         ncols = len(disp_images)
@@ -541,6 +558,7 @@ def create_skeleton_result_figure(inputs: Tensor, data_samples: SampleList, grou
             keypoints_gt=keypoints,
             keypoints_visible=keypoints_visible,
             show_heatmaps=False,
+            show_images=True,
             draw_skeleton=True,
             skeleton_links=skeleton_links,
             skeleton_link_colors=skeleton_link_colors,
@@ -825,12 +843,16 @@ class Visualization(object):
         # if feats_student is not None:
         #     rows.append(make_grid(self.draw_features_pca(feats_student[:nimgs]), nCols=ncols))
         for ft in feats:
-            rows.append(make_grid(self.draw_features_pca(ft[:nimgs]), nCols=ncols))
+            feats_rgb = self.draw_features_pca(ft[:nimgs])
+            rows.append(make_grid(feats_rgb, nCols=ncols))
 
         if masks is not None:
             _masks = masks[:nimgs].byte()
             _masks = to_numpy(F.interpolate(_masks, size=(256, 256)))[:, 0]
             rows.append(make_grid(to_cmap_images(_masks), nCols=ncols))
+
+        # self.draw_features_pca(ft[:nimgs]
+        # create_skeleton_result_figure()
 
         ncols_panel = len(rows) if horizontal else 1
         return make_grid(rows, nCols=ncols_panel, normalize=False, fx=f, fy=f)

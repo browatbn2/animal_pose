@@ -1,12 +1,12 @@
 _base_ = ['../../../_base_/default_runtime.py']
 
 # runtime
-train_cfg = dict(max_epochs=600, val_interval=5)
+train_cfg = dict(max_epochs=200, val_interval=1)
 
 # optimizer
 optim_wrapper = dict(optimizer=dict(
     type='Adam',
-    lr=5e-5,
+    lr=2e-5,
 ))
 
 # learning policy
@@ -40,12 +40,14 @@ if distill:
 # codec settings
 codec = dict(type='MSRAHeatmap', input_size=(256, 256), heatmap_size=(64, 64), sigma=2)
 
+
 embedding_dim = 128
+dino_channels = 1024
 
 # model settings
 model = dict(
     type='DinoPoseEstimator',
-    distill=distill,
+    distill=False,
     data_preprocessor=dict(
         type='PoseDataPreprocessor',
         mean=[123.675, 116.28, 103.53],
@@ -94,72 +96,22 @@ model = dict(
         in_channels=embedding_dim,
         out_channels=17,
         deconv_out_channels=None,
+        conv_out_channels=[64, 64],
+        conv_kernel_sizes=[7, 7],
         loss=dict(type='KeypointMSELoss', use_target_weight=True),
         decoder=codec),
-    student_neck=dict(
-        type='HeatmapHead',
-        in_channels=32,
-        out_channels=embedding_dim,
-        deconv_out_channels=None,
-    ),
-    student_head=dict(
-        type='HeatmapHead',
-        in_channels=32,
-        out_channels=17,
-        deconv_out_channels=None,
-        loss=dict(type='KeypointMSELoss', use_target_weight=True),
-        decoder=codec),
-    student_decoder=dict(
+    dino_decoder=dict(
         type='HeatmapHead',
         in_channels=embedding_dim,
-        out_channels=384,
+        out_channels=dino_channels,
         deconv_out_channels=None,
-    ),
-    student_head_hr=dict(
-        type='HRNet',
-        in_channels=embedding_dim,
-        extra=dict(
-            stage1=dict(
-                num_modules=1,
-                num_branches=1,
-                block='BASIC',
-                num_blocks=(4,),
-                num_channels=(64,)),
-            stage2=dict(
-                num_modules=1,
-                num_branches=2,
-                block='BASIC',
-                num_blocks=(4, 4),
-                num_channels=(32, 64)),
-            stage3=dict(
-                num_modules=1,
-                num_branches=3,
-                block='BASIC',
-                num_blocks=(4, 4, 4),
-                num_channels=(32, 64, 128)),
-            stage4=dict(
-                num_modules=1,
-                num_branches=3,
-                block='BASIC',
-                num_blocks=(4, 4, 4),
-                num_channels=(32, 64, 128)),
-            # stage4=dict(
-            #     num_modules=3,
-            #     num_branches=4,
-            #     block='BASIC',
-            #     num_blocks=(4, 4, 4, 4),
-            #     num_channels=(32, 64, 128, 256))
-        ),
-        init_cfg=dict(
-            type='Pretrained',
-            checkpoint='https://download.openmmlab.com/mmpose/pretrain_models/hrnet_w32-36af842e.pth'),
     ),
     test_cfg=dict(
         flip_test=True,
         flip_mode='heatmap',
         shift_heatmap=True,
     ),
-    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/fewshot_distill_hrnet_ap10k-256x256/epoch_170.pth'),
+    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_hrnet_ap10k-256x256/epoch_200.pth'),
 )
 
 # base dataset settings
@@ -198,7 +150,6 @@ train_pipeline = [
     dict(type='GenerateTarget', encoder=codec),
 ]
 
-# if distill:
 train_pipeline.append(pixel_augmentations)
 
 train_pipeline.append(
@@ -225,7 +176,7 @@ val_pipeline = [
 # data loaders
 train_dataloader = dict(
     batch_size=32,
-    num_workers=4,
+    num_workers=5,
     persistent_workers=True,
     sampler=dict(type='DefaultSampler', shuffle=True),
     dataset=dict(
@@ -236,40 +187,36 @@ train_dataloader = dict(
         data_prefix=dict(img='data/'),
         pipeline=train_pipeline,
     ))
-if distill:
-    val_cfg = None
-    test_cfg = None
-else:
-    val_dataloader = dict(
-        batch_size=32,
-        num_workers=4,
-        persistent_workers=True,
-        drop_last=False,
-        sampler=dict(type='DefaultSampler', shuffle=False, round_up=False),
-        dataset=dict(
-            type=dataset_type,
-            data_root=data_root,
-            data_mode=data_mode,
-            ann_file='annotations/ap10k-val-split1.json',
-            data_prefix=dict(img='data/'),
-            test_mode=True,
-            pipeline=val_pipeline,
-        ))
-    test_dataloader = dict(
-        batch_size=32,
-        num_workers=4,
-        persistent_workers=True,
-        drop_last=False,
-        sampler=dict(type='DefaultSampler', shuffle=False, round_up=False),
-        dataset=dict(
-            type=dataset_type,
-            data_root=data_root,
-            data_mode=data_mode,
-            ann_file='annotations/ap10k-val-split1.json',
-            data_prefix=dict(img='data/'),
-            test_mode=True,
-            pipeline=val_pipeline,
-        ))
-    # evaluators
-    val_evaluator = dict(type='CocoMetric', ann_file=data_root + 'annotations/ap10k-val-split1.json')
-    test_evaluator = dict(type='CocoMetric', ann_file=data_root + 'annotations/ap10k-val-split1.json')
+val_dataloader = dict(
+    batch_size=32,
+    num_workers=4,
+    persistent_workers=True,
+    drop_last=False,
+    sampler=dict(type='DefaultSampler', shuffle=False, round_up=False),
+    dataset=dict(
+        type=dataset_type,
+        data_root=data_root,
+        data_mode=data_mode,
+        ann_file='annotations/ap10k-val-split1.json',
+        data_prefix=dict(img='data/'),
+        test_mode=True,
+        pipeline=val_pipeline,
+    ))
+test_dataloader = dict(
+    batch_size=32,
+    num_workers=4,
+    persistent_workers=True,
+    drop_last=False,
+    sampler=dict(type='DefaultSampler', shuffle=False, round_up=False),
+    dataset=dict(
+        type=dataset_type,
+        data_root=data_root,
+        data_mode=data_mode,
+        ann_file='annotations/ap10k-val-split1.json',
+        data_prefix=dict(img='data/'),
+        test_mode=True,
+        pipeline=val_pipeline,
+    ))
+# evaluators
+val_evaluator = dict(type='CocoMetric', ann_file=data_root + 'annotations/ap10k-val-split1.json')
+test_evaluator = dict(type='CocoMetric', ann_file=data_root + 'annotations/ap10k-val-split1.json')

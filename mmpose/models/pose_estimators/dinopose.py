@@ -522,7 +522,7 @@ class DinoPoseEstimator(BasePoseEstimator):
         # Visualization of training progress
         #
 
-        create_figure = True
+        create_figure = False
 
         if create_figure:
             interval = 1
@@ -570,10 +570,24 @@ class DinoPoseEstimator(BasePoseEstimator):
                     cv2.imshow("Predicted Results", cv2.cvtColor(disp_skeletons, cv2.COLOR_RGB2BGR))
 
                     disp_skeletons = create_skeleton_result_figure(inputs, data_samples, groundtruth=True)
-                    cv2.imshow("Groudtruth Results", cv2.cvtColor(disp_skeletons, cv2.COLOR_RGB2BGR))
+                    cv2.imshow("Groudtruth Results", disp_skeletons)
 
-                    disp_features = self.vi.visualize_batch(images=inputs, feats=[feats[0]], datasamples=datasamples, nimgs=len(inputs), horizontal=False)
-                    cv2.imshow("Feature Maps", cv2.cvtColor(disp_features, cv2.COLOR_RGB2BGR))
+                    def convert_to_rgba(src):
+                        tmp = cv2.cvtColor(src, cv2.COLOR_BGR2GRAY)
+                        _, alpha = cv2.threshold(tmp, 0, 255, cv2.THRESH_BINARY)
+                        # b, g, r = cv2.split(src)
+                        r, g, b = cv2.split(src)
+                        rgba = [b, g, r, alpha]
+                        dst = cv2.merge(rgba, 4)
+                        return dst
+
+                    disp_skeletons = convert_to_rgba(disp_skeletons)
+                    # cv2.imwrite("groundtruth_results.png", disp_skeletons)
+                    cv2.imshow("Groudtruth Results", disp_skeletons)
+                    # cv2.imshow("Groudtruth Results", cv2.cvtColor(disp_skeletons, cv2.COLOR_BGR2RGB))
+
+                    # disp_features = self.vi.visualize_batch(images=inputs, feats=[feats[0]], nimgs=len(inputs), horizontal=False)
+                    # cv2.imshow("Feature Maps", cv2.cvtColor(disp_features, cv2.COLOR_RGB2BGR))
 
             cv2.waitKey(wait)
 

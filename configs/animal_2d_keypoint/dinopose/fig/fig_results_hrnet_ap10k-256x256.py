@@ -139,7 +139,7 @@ train_pipeline.append(
     dict(type='PackPoseInputs',
          meta_keys=('id', 'img_id', 'img_path', 'category_id', 'crowd_index', 'ori_shape', 'img_shape',
         'input_size', 'input_center', 'input_scale', 'flip', 'flip_direction', 'flip_indices',
-        'raw_ann_info', 'dataset_name', 'dino_warp_mat', 'mask'),
+        'raw_ann_info', 'dataset_name', 'dino_warp_mat', 'mask', 'skeleton_links', 'skeleton_link_colors'),
          pack_transformed=True)
 )
 
@@ -161,14 +161,15 @@ train_dataloader = dict(
     batch_size=32,
     num_workers=4,
     persistent_workers=False,
-    sampler=dict(type='DefaultSampler', shuffle=True),
+    sampler=dict(type='DefaultSampler', shuffle=False),
     dataset=dict(
         type=dataset_type,
         data_root=data_root,
         data_mode=data_mode,
         ann_file='annotations/ap10k-train-split1.json',
         data_prefix=dict(img='data/'),
-        pipeline=train_pipeline,
+        # pipeline=train_pipeline,
+        pipeline=val_pipeline,
     ))
 val_dataloader = dict(
     batch_size=32,
