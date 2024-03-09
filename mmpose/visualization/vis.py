@@ -804,7 +804,7 @@ class Visualization(object):
                         nimgs=4):
 
         nimgs = min(nimgs, len(images))
-        ncols = 1 if horizontal else nimgs//4
+        ncols = 1 if horizontal else nimgs//2
 
         rows = []
 
@@ -842,9 +842,10 @@ class Visualization(object):
         #     rows.append(make_grid(self.draw_features_pca(feats_rgb[:nimgs]), nCols=ncols))
         # if feats_student is not None:
         #     rows.append(make_grid(self.draw_features_pca(feats_student[:nimgs]), nCols=ncols))
-        for ft in feats:
-            feats_rgb = self.draw_features_pca(ft[:nimgs])
-            rows.append(make_grid(feats_rgb, nCols=ncols))
+        if feats is not None:
+            for ft in feats:
+                feats_rgb = self.draw_features_pca(ft[:nimgs])
+                rows.append(make_grid(feats_rgb, nCols=ncols))
 
         if masks is not None:
             _masks = masks[:nimgs].byte()

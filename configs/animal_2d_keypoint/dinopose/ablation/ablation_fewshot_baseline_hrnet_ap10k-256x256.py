@@ -3,12 +3,12 @@ _base_ = ['../../../_base_/default_runtime.py']
 randomness=dict(seed=0)
 
 # runtime
-train_cfg = dict(max_epochs=150, val_interval=10)
+train_cfg = dict(max_epochs=50, val_interval=5)
 
 # optimizer
 optim_wrapper = dict(optimizer=dict(
     type='Adam',
-    lr=2e-5,
+    lr=1e-4,
 ))
 
 # learning policy
@@ -40,8 +40,9 @@ codec = dict(type='MSRAHeatmap', input_size=(256, 256), heatmap_size=(64, 64), s
 embedding_dim = 128
 dino_dim = 1024
 
+# model settings
 model = dict(
-    type='mmpose.DinoPoseEstimator',
+    type='DinoPoseEstimator',
     distill=False,
     data_preprocessor=dict(
         type='PoseDataPreprocessor',
@@ -49,14 +50,43 @@ model = dict(
         std=[58.395, 57.12, 57.375],
         bgr_to_rgb=True),
     backbone=dict(
-        type='ResNet',
-        depth=50,
-        init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50'),
+        type='HRNet',
+        in_channels=3,
+        extra=dict(
+            stage1=dict(
+                num_modules=1,
+                num_branches=1,
+                block='BOTTLENECK',
+                num_blocks=(4,),
+                num_channels=(64,)),
+            stage2=dict(
+                num_modules=1,
+                num_branches=2,
+                block='BASIC',
+                num_blocks=(4, 4),
+                num_channels=(32, 64)),
+            stage3=dict(
+                num_modules=4,
+                num_branches=3,
+                block='BASIC',
+                num_blocks=(4, 4, 4),
+                num_channels=(32, 64, 128)),
+            stage4=dict(
+                num_modules=3,
+                num_branches=4,
+                block='BASIC',
+                num_blocks=(4, 4, 4, 4),
+                num_channels=(32, 64, 128, 256))),
+        init_cfg=dict(
+            type='Pretrained',
+            checkpoint='https://download.openmmlab.com/mmpose/pretrain_models/hrnet_w32-36af842e.pth'),
     ),
     neck=dict(
         type='HeatmapHead',
-        in_channels=2048,
-        out_channels=embedding_dim),
+        in_channels=32,
+        out_channels=embedding_dim,
+        deconv_out_channels=None,
+    ),
     head=dict(
         type='HeatmapHead',
         in_channels=embedding_dim,
@@ -77,7 +107,7 @@ model = dict(
         flip_mode='heatmap',
         shift_heatmap=True,
     ),
-    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_res50_ap10k-256x256/epoch_140.pth'),
+    # init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_hrnet_ap10k-256x256/epoch_200.pth'),
 )
 
 # base dataset settings
@@ -211,7 +241,7 @@ indices_fs20 = [22669, 22705, 23420, 22661, 23417, 22738, 22687, 22937, 22837, 2
 # data loaders
 train_dataloader = dict(
     batch_size=32,
-    num_workers=4,
+    num_workers=6,
     persistent_workers=False,
     sampler=dict(type='DefaultSampler', shuffle=True),
     dataset=dict(

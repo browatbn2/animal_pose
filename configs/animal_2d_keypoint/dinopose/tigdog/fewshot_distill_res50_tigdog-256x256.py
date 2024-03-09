@@ -8,7 +8,7 @@ train_cfg = dict(max_epochs=200, val_interval=1)
 # optimizer
 optim_wrapper = dict(optimizer=dict(
     type='Adam',
-    lr=2e-5,
+    lr=1e-4,
 ))
 
 # learning policy
@@ -31,7 +31,7 @@ auto_scale_lr = dict(base_batch_size=512)
 # hooks
 default_hooks = dict(
     logger=dict(type='LoggerHook', interval=40),
-    checkpoint=dict(type='CheckpointHook', interval=1),
+    checkpoint=dict(type='CheckpointHook', interval=10),
 )
 
 # codec settings
@@ -116,7 +116,7 @@ model = dict(
         flip_mode='heatmap',
         shift_heatmap=True,
     ),
-    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_res50_tigdog-256x256/epoch_120.pth'),
+    # init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_res50_tigdog-256x256/epoch_120.pth'),
 )
 
 # base dataset settings
@@ -201,10 +201,11 @@ train_dataloader = dict(
     )
 )
 
-indices_test  = [5390, 3768, 12816, 6531, 5541, 5469, 13097, 10515, 5752, 13384, 1960, 5146, 6394, 11864, 5147, 10691, 1997, 5411, 11882, 3760, 96, 185, 12787, 5555, 13067, 3746, 5551, 81, 5483, 125, 5682, 5461]
+# indices_test  = [5390, 3768, 12816, 6531, 5541, 5469, 13097, 10515, 5752, 13384, 1960, 5146, 6394, 11864, 5147, 10691, 1997, 5411, 11882, 3760, 96, 185, 12787, 5555, 13067, 3746, 5551, 81, 5483, 125, 5682, 5461]
 
-# valid_file = 'valid_tiger.json'
-valid_file = 'valid_horse.json'
+# valid_file = 'valid_horse.json'
+valid_file = 'valid_tiger.json'
+# valid_file = 'valid.json'
 
 val_dataloader = dict(
     batch_size=32,

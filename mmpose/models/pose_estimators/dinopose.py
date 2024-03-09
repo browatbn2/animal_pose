@@ -533,7 +533,7 @@ class DinoPoseEstimator(BasePoseEstimator):
 
         username = os.environ.get('USER')
         if self.batch_idx % interval == 0 and username == 'browatbn':
-            if dino_recon is not None:
+            if dino_recon is not None and False:
                 # if not train and self.test_cfg.get('flip_test', False):
                     # feats_rgb = to_numpy(feats[0][0])
                     # feats_dino = to_numpy(feats_dino[0][0])
@@ -545,6 +545,7 @@ class DinoPoseEstimator(BasePoseEstimator):
                     # feats_student = to_numpy(feats_student[0])
                     # feats_merged = to_numpy(feats_merged[0])
                 # self.vi.fit_pca(feats_student[:4])
+
                 disp_dino = self.vi.visualize_batch(images=inputs,
                                                     attentions=to_numpy(inputs_dino),
                                                     # attentions_recon=to_numpy(input_dino_recon),
@@ -557,6 +558,14 @@ class DinoPoseEstimator(BasePoseEstimator):
                                                     ],
                                                     masks=masks)
                 cv2.imshow("Batch", cv2.cvtColor(disp_dino, cv2.COLOR_RGB2BGR))
+                # if create_figure:
+                #     disp_features = self.vi.visualize_batch(images=inputs,
+                #                                             attentions=to_numpy(inputs_dino),
+                #                                             attentions_recon_rgb=to_numpy(dino_recon),
+                #                                             # feats=[feats],
+                #                                             nimgs=len(inputs),
+                #                                             horizontal=False)
+                #     cv2.imshow("Dinos Recons", cv2.cvtColor(disp_features, cv2.COLOR_RGB2BGR))
 
             if pred_heatmaps is not None:
                 preds = self.head.decode(pred_heatmaps)

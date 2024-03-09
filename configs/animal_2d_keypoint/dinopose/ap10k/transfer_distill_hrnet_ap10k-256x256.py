@@ -6,7 +6,7 @@ train_cfg = dict(max_epochs=150, val_interval=10)
 # optimizer
 optim_wrapper = dict(optimizer=dict(
     type='Adam',
-    lr=2e-5,
+    lr=1e-4,
 ))
 
 # learning policy
@@ -99,7 +99,7 @@ model = dict(
         flip_mode='heatmap',
         shift_heatmap=True,
     ),
-    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_hrnet_ap10k-256x256/epoch_200.pth'),
+    # init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_hrnet_ap10k-256x256/epoch_200.pth'),
 )
 
 # base dataset settings
@@ -167,9 +167,9 @@ train_supercategory = 'Bovidae'
 # test_supercategory = 'Bovidae'
 test_supercategory = None
 # test_category = 'deer'
-test_category = 'moose'
+# test_category = 'moose'
 # test_category = 'horse'
-# test_category = 'zebra'
+test_category = 'zebra'
 # test_category = 'chimpanzee'
 # test_category = 'gorilla'
 # test_category = None

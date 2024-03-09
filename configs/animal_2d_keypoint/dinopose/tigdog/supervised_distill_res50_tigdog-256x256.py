@@ -1,12 +1,14 @@
 _base_ = ['../../../_base_/default_runtime.py']
 
+randomness=dict(seed=0)
+
 # runtime
-train_cfg = dict(max_epochs=200, val_interval=1)
+train_cfg = dict(max_epochs=150, val_interval=1)
 
 # optimizer
 optim_wrapper = dict(optimizer=dict(
     type='Adam',
-    lr=2e-5,
+    lr=1e-4,
 ))
 
 # learning policy
@@ -29,8 +31,7 @@ auto_scale_lr = dict(base_batch_size=512)
 # hooks
 default_hooks = dict(
     logger=dict(type='LoggerHook', interval=40),
-    # checkpoint=dict(save_best='coco/AP', rule='greater'),
-    checkpoint=dict(type='CheckpointHook', interval=1),
+    checkpoint=dict(type='CheckpointHook', interval=5),
 )
 
 # codec settings
@@ -38,11 +39,11 @@ codec = dict(type='MSRAHeatmap', input_size=(256, 256), heatmap_size=(64, 64), s
 
 num_keypoints = 18
 embedding_dim = 128
-dino_channels = 384
+dino_dim = 768
 
 # model settings
 model = dict(
-    type='DinoPoseEstimator',
+    type='mmpose.DinoPoseEstimator',
     distill=False,
     data_preprocessor=dict(
         type='PoseDataPreprocessor',
@@ -50,124 +51,35 @@ model = dict(
         std=[58.395, 57.12, 57.375],
         bgr_to_rgb=True),
     backbone=dict(
-        type='HRNet',
-        in_channels=3,
-        extra=dict(
-            stage1=dict(
-                num_modules=1,
-                num_branches=1,
-                block='BOTTLENECK',
-                num_blocks=(4,),
-                num_channels=(64,)),
-            stage2=dict(
-                num_modules=1,
-                num_branches=2,
-                block='BASIC',
-                num_blocks=(4, 4),
-                num_channels=(32, 64)),
-            stage3=dict(
-                num_modules=4,
-                num_branches=3,
-                block='BASIC',
-                num_blocks=(4, 4, 4),
-                num_channels=(32, 64, 128)),
-            stage4=dict(
-                num_modules=3,
-                num_branches=4,
-                block='BASIC',
-                num_blocks=(4, 4, 4, 4),
-                num_channels=(32, 64, 128, 256))),
-        init_cfg=dict(
-            type='Pretrained',
-            checkpoint='https://download.openmmlab.com/mmpose/pretrain_models/hrnet_w32-36af842e.pth'),
+        type='ResNet',
+        depth=50,
+        init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50'),
     ),
     neck=dict(
         type='HeatmapHead',
-        in_channels=32,
-        out_channels=embedding_dim,
-        deconv_out_channels=None,
-    ),
+        in_channels=2048,
+        out_channels=embedding_dim),
     head=dict(
         type='HeatmapHead',
         in_channels=embedding_dim,
         out_channels=num_keypoints,
         deconv_out_channels=None,
+        conv_out_channels=[64, 64],
+        conv_kernel_sizes=[7, 7],
         loss=dict(type='KeypointMSELoss', use_target_weight=True),
         decoder=codec),
-    student_neck=dict(
-        type='HeatmapHead',
-        in_channels=32,
-        out_channels=embedding_dim,
-        deconv_out_channels=None,
-    ),
-    student_head=dict(
-        type='HeatmapHead',
-        in_channels=32,
-        out_channels=num_keypoints,
-        deconv_out_channels=None,
-        # deconv_out_channels=(32,),
-        # deconv_kernel_sizes=(4,),
-        loss=dict(type='KeypointMSELoss', use_target_weight=True),
-        decoder=codec),
-    student_decoder=dict(
+    dino_decoder=dict(
         type='HeatmapHead',
         in_channels=embedding_dim,
-        out_channels=dino_channels,
+        out_channels=dino_dim,
         deconv_out_channels=None,
-    ),
-    # student_head_hr=dict(
-    #     type='HeatmapHead',
-    #     in_channels=embedding_dim,
-    #     out_channels=32,
-    #     deconv_out_channels=None,
-    #     conv_out_channels=(128, 128, 128, 128),
-    #     conv_kernel_sizes=(3, 3, 3, 3),
-    # ),
-    student_head_hr=dict(
-        type='HRNet',
-        in_channels=embedding_dim,
-        extra=dict(
-            stage1=dict(
-                num_modules=1,
-                num_branches=1,
-                block='BASIC',
-                num_blocks=(4,),
-                num_channels=(64,)),
-            stage2=dict(
-                num_modules=1,
-                num_branches=2,
-                block='BASIC',
-                num_blocks=(4, 4),
-                num_channels=(32, 64)),
-            stage3=dict(
-                num_modules=1,
-                num_branches=3,
-                block='BASIC',
-                num_blocks=(4, 4, 4),
-                num_channels=(32, 64, 128)),
-            stage4=dict(
-                num_modules=1,
-                num_branches=3,
-                block='BASIC',
-                num_blocks=(4, 4, 4),
-                num_channels=(32, 64, 128)),
-            # stage4=dict(
-            #     num_modules=3,
-            #     num_branches=4,
-            #     block='BASIC',
-            #     num_blocks=(4, 4, 4, 4),
-            #     num_channels=(32, 64, 128, 256))
-        ),
-        init_cfg=dict(
-            type='Pretrained',
-            checkpoint='https://download.openmmlab.com/mmpose/pretrain_models/hrnet_w32-36af842e.pth'),
     ),
     test_cfg=dict(
         flip_test=True,
         flip_mode='heatmap',
         shift_heatmap=True,
     ),
-    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/fewshot_distill_hrnet_ap10k-256x256/epoch_160.pth'),
+    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_res50_tigdog-256x256/epoch_120.pth'),
 )
 
 # base dataset settings
@@ -199,7 +111,7 @@ train_pipeline = [
     dict(type='LoadImage'),
     dict(type='GetBBoxCenterScale'),
     dict(type='RandomFlip', direction='horizontal'),
-    # dict(type='RandomHalfBody'),
+    dict(type='RandomHalfBody'),
     dict(type='RandomBBoxTransform'),
     dict(type='TopdownAffine', input_size=codec['input_size']),
     dict(type='TopdownAffineDino', input_size=codec['input_size'], input_size_dino=codec['heatmap_size']),
@@ -229,8 +141,6 @@ val_pipeline = [
          pack_transformed=True)
 ]
 
-indices_36 = [4184, 4891, 7739, 11759, 7073, 9155, 10175, 5095, 1262, 3961, 3349, 11590, 4391, 1033, 9518, 10373, 9325, 3266, 8341, 7731, 11745, 3146, 2970, 11393, 3856, 12516, 1312, 1354, 1216, 4846, 11159, 4964, 4201, 7615, 10116, 1271,
-              105250, 100464, 106067, 109082, 107374, 102518, 115734, 102065, 104962, 104962, 104403, 115583, 109221, 109159, 102019, 111242, 116473, 111419, 103772, 107558, 114772, 111932, 111154, 112561, 110849, 110787, 104891, 116429, 110350, 107635, 101366, 110988, 115578, 105710, 105962, 103720]
 # data loaders
 train_dataloader = dict(
     batch_size=32,
@@ -238,25 +148,24 @@ train_dataloader = dict(
     persistent_workers=False,
     sampler=dict(type='DefaultSampler', shuffle=True),
     dataset=dict(
-        type='RepeatDataset',
-        times=100,
-        dataset=dict(
-            type=dataset_type,
-            data_root=data_root,
-            data_mode=data_mode,
-            ann_file='train.json',
-            data_prefix=dict(img='.'),
-            pipeline=train_pipeline,
-            indices=indices_36,
-        )
+        type=dataset_type,
+        data_root=data_root,
+        data_mode=data_mode,
+        ann_file='train.json',
+        data_prefix=dict(img='.'),
+        pipeline=train_pipeline,
     )
 )
 
 indices_test  = [5390, 3768, 12816, 6531, 5541, 5469, 13097, 10515, 5752, 13384, 1960, 5146, 6394, 11864, 5147, 10691, 1997, 5411, 11882, 3760, 96, 185, 12787, 5555, 13067, 3746, 5551, 81, 5483, 125, 5682, 5461]
 
+# valid_file = 'valid_horse.json'
+valid_file = 'valid_tiger.json'
+# valid_file = 'valid.json'
+
 val_dataloader = dict(
     batch_size=32,
-    num_workers=4,
+    num_workers=5,
     persistent_workers=True,
     drop_last=False,
     sampler=dict(type='DefaultSampler', shuffle=False, round_up=False),
@@ -264,7 +173,7 @@ val_dataloader = dict(
         type=dataset_type,
         data_root=data_root,
         data_mode=data_mode,
-        ann_file='valid_horse.json',
+        ann_file=valid_file,
         data_prefix=dict(img='.'),
         test_mode=True,
         pipeline=val_pipeline,
@@ -281,11 +190,10 @@ test_dataloader = dict(
         type=dataset_type,
         data_root=data_root,
         data_mode=data_mode,
-        ann_file='valid_horse.json',
+        ann_file=valid_file,
         data_prefix=dict(img='.'),
         test_mode=True,
         pipeline=val_pipeline,
-        # indices=indices_test
     )
 )
 

@@ -116,7 +116,7 @@ model = dict(
         flip_mode='heatmap',
         shift_heatmap=True,
     ),
-    init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_res50_tigdog-256x256/epoch_120.pth'),
+    # init_cfg=dict(type='Pretrained', checkpoint='/home/browatbn/dev/csl/animal_pose/work_dirs/distill_res50_tigdog-256x256/epoch_120.pth'),
 )
 
 # base dataset settings

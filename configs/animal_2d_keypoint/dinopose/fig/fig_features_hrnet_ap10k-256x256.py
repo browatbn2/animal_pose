@@ -237,7 +237,7 @@ train_dataloader = dict(
         ann_file='annotations/ap10k-train-split1.json',
         data_prefix=dict(img='data/'),
         pipeline=train_pipeline,
-        indices=indices_fs20
+        # indices=indices_fs20
     ))
 val_dataloader = dict(
     batch_size=32,
