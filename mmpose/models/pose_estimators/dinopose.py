@@ -486,7 +486,12 @@ class DinoPoseEstimator(BasePoseEstimator):
             if not train:
                 ft_ = feats[0]
             dino_recon = self.dino_decoder(ft_)
-            loss_recon_dino = torch.nn.functional.mse_loss(dino_recon[m_recon], inputs_dino[m_recon]) * 0.1
+            if inputs_dino.shape[1] == 12:
+                # DINOv1
+                loss_recon_dino = torch.nn.functional.mse_loss(dino_recon[m_recon], inputs_dino[m_recon], reduction='sum')
+            else:
+                # DINOv2
+                loss_recon_dino = torch.nn.functional.mse_loss(dino_recon[m_recon], inputs_dino[m_recon]) * 0.1
             losses.update(loss_recon_dino=loss_recon_dino)
         else:
             # detach features

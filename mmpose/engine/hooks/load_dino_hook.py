@@ -16,10 +16,9 @@ from mmpose.registry import HOOKS
 DATA_BATCH = Optional[Union[dict, tuple, list]]
 
 
-def get_dinov2_filepath(dataset, split, arch):
+def get_dinov2_filepath(dataset, split, arch, patch_size):
     username = os.environ.get('USER')
     out_dir = f'/home/{username}/dev/data/dino'
-    patch_size = 14
     return os.path.join(out_dir, f'dino_{dataset}_{split}_{arch}_{patch_size}.h5')
 
 
@@ -35,17 +34,18 @@ class LoadDinoHook(Hook):
     def __init__(self, dataset='ap10k',
                  train_split='train-split1',
                  val_split='val-split1',
-                 arch='vits14'):
+                 arch='vits14',
+                 patch_size=14):
 
         self.dino_hdf5 = None
         self.dino_features = {}
 
-        dino_file = get_dinov2_filepath(dataset, split=train_split, arch=arch)
+        dino_file = get_dinov2_filepath(dataset, split=train_split, arch=arch, patch_size=patch_size)
         if dino_file is not None:
             assert os.path.isfile(dino_file), f"Could not find DINO feature file {dino_file}"
             self.dino_hdf5_train = load_dino_hdf5(dino_file)
 
-        dino_file = get_dinov2_filepath(dataset, split=val_split, arch=arch)
+        dino_file = get_dinov2_filepath(dataset, split=val_split, arch=arch, patch_size=patch_size)
         if dino_file is not None:
             assert os.path.isfile(dino_file), f"Could not find DINO feature file {dino_file}"
             self.dino_hdf5_val = load_dino_hdf5(dino_file)
